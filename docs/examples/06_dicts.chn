@@ -1,0 +1,58 @@
+-- CHN 1.0 - Example 06: Dicts (Key-Value Maps)
+--
+-- Dicts store key-value pairs.
+-- Keys are strings. Values can be any type.
+-- Access with dot notation or bracket notation.
+
+public entry main() {
+    -- Create a dict literal
+    let user = {
+        name: "Alice",
+        age: 28,
+        active: true,
+        scores: [95, 87, 92]
+    }
+
+    -- Access fields
+    stdo(f"Name:   {user.name}")
+    stdo(f"Age:    {user.age}")
+    stdo(f"Active: {user.active}")
+
+    -- Modify a field
+    user.age = 29
+    stdo(f"Updated age: {user.age}")
+
+    -- Add a new field
+    user.email = "alice@example.com"
+    stdo(f"Email: {user.email}")
+
+    -- Nested dict
+    let config = {
+        database: {
+            host: "localhost",
+            port: 5432,
+            name: "mydb"
+        },
+        debug: false
+    }
+    stdo(f"DB host: {config.database.host}")
+    stdo(f"DB port: {config.database.port}")
+
+    -- Struct shorthand: struct Name { field: default }
+    -- A struct is a constructor function that returns a dict.
+    struct Point {
+        x: 0,
+        y: 0
+    }
+
+    let p1 = Point(3, 4)
+    let p2 = Point(0, 0)
+    stdo(f"p1 = ({p1.x}, {p1.y})")
+    stdo(f"p2 = ({p2.x}, {p2.y})")
+
+    -- Compute distance
+    let dx = p1.x - p2.x
+    let dy = p1.y - p2.y
+    let dist = (dx * dx + dy * dy) ** 0.5
+    stdo(f"distance: {dist}")
+}

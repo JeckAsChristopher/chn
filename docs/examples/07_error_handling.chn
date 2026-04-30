@@ -1,0 +1,65 @@
+-- CHN 1.0 - Example 07: Error Handling
+--
+-- CHN uses try / catch / throw for error handling.
+-- throw can throw any value (usually a string or dict).
+-- catch binds the thrown value to a variable.
+
+func divide(a, b) {
+    if b == 0 {
+        throw "division by zero"
+    }
+    return a / b
+}
+
+func safe_parse(s) {
+    let n = str_to_num(s)
+    if n == nil {
+        throw { code: "PARSE_ERROR", input: s }
+    }
+    return n
+}
+
+func str_to_num(s) {
+    -- Attempt to parse string as number
+    -- Returns nil on failure
+    let n = 0.0
+    let i = 0
+    let len = s.length()
+    if len == 0 { return nil }
+    while i < len {
+        let c = s[i]
+        if c < "0" || c > "9" { return nil }
+        i = i + 1
+    }
+    return len
+}
+
+public entry main() {
+    -- Successful operation
+    try {
+        let result = divide(10, 2)
+        stdo(f"10 / 2 = {result}")
+    } catch err {
+        stdo(f"Error: {err}")
+    }
+
+    -- Caught error
+    try {
+        let result = divide(5, 0)
+        stdo(f"result: {result}")
+    } catch err {
+        stdo(f"Caught: {err}")
+    }
+
+    -- Nested try/catch
+    try {
+        try {
+            throw "inner error"
+        } catch e1 {
+            stdo(f"Inner catch: {e1}")
+            throw "rethrown"
+        }
+    } catch e2 {
+        stdo(f"Outer catch: {e2}")
+    }
+}

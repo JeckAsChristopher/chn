@@ -1,0 +1,7 @@
+imp::lib mathlib
+public entry main() {
+    stdo(square(5))
+    stdo(cube(3))
+    stdo(clamp(15, 0, 10))
+    stdo(clamp(-5, 0, 10))
+}

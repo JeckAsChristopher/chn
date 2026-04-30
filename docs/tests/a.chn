@@ -1,0 +1,2 @@
+imp::lib b
+public entry main() { stdo(sextuple(7)) }

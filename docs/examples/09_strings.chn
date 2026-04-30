@@ -1,0 +1,48 @@
+-- CHN 1.0 - Example 09: String Operations
+--
+-- Strings are immutable text sequences.
+-- Use + for concatenation, f"..." for interpolation.
+-- Methods: length(), upper(), lower(), trim(),
+--   split(sep), replace(old, new), contains(sub),
+--   starts_with(prefix), ends_with(suffix), sub(start, len)
+
+public entry main() {
+    let s = "  Hello, World!  "
+
+    stdo(s.length())
+    stdo(s.upper())
+    stdo(s.lower())
+
+    let trimmed = s.trim()
+    stdo(trimmed)
+
+    let haystack = "The quick brown fox"
+    let has_quick = haystack.contains("quick")
+    stdo(has_quick)
+
+    let replaced = haystack.replace("fox", "cat")
+    stdo(replaced)
+
+    let csv = "alpha,beta,gamma,delta"
+    let parts = csv.split(",")
+    for p in parts {
+        stdo(p)
+    }
+
+    let path = "/home/user/file.chn"
+    let is_absolute = path.starts_with("/")
+    let is_chn = path.ends_with(".chn")
+    stdo(is_absolute)
+    stdo(is_chn)
+
+    let excerpt = path.sub(6, 4)
+    stdo(excerpt)
+
+    let n = 3.14159
+    stdo(f"pi = {n}")
+
+    let a = 10
+    let b = 3
+    stdo(f"{a} + {b} = {a + b}")
+    stdo(f"{a} ** {b} = {a ** b}")
+}

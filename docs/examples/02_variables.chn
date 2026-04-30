@@ -1,0 +1,44 @@
+-- CHN 1.0 - Example 02: Variables and Types
+--
+-- CHN has two variable declaration keywords:
+--   let  - declares a local variable (block-scoped)
+--   var  - same as let (alias)
+--
+-- Types are inferred. Supported types:
+--   number    64-bit floating point (like JavaScript)
+--   string    UTF-8 text
+--   bool      true or false
+--   nil       absence of value
+--   array     ordered list
+--   dict      key-value map (created with {})
+
+public entry main() {
+    -- Numbers
+    let age = 25
+    let pi  = 3.14159
+    let neg = -7.5
+
+    -- Strings
+    let name    = "Alice"
+    let greeting = "Hello, " + name
+
+    -- Booleans
+    let active = true
+    let done   = false
+
+    -- Nil
+    let nothing = nil
+
+    -- Arrays
+    let scores = [98, 87, 92, 75]
+
+    -- Dicts
+    let person = { name: "Bob", age: 30, active: true }
+
+    -- F-strings: embed expressions directly in strings
+    stdo(f"Name: {name}, Age: {age}")
+    stdo(f"Pi is approximately {pi}")
+    stdo(f"Greeting: {greeting}")
+    stdo(f"Scores: {scores}")
+    stdo(f"Person name: {person.name}")
+}

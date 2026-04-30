@@ -1,0 +1,2 @@
+imp::lib mlib
+public entry main() { stdo(greet("world")) }

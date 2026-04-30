@@ -1,0 +1,7 @@
+export func square(n) { return n * n }
+export func cube(n)   { return n * n * n }
+export func clamp(x, lo, hi) {
+    if x < lo { return lo }
+    if x > hi { return hi }
+    return x
+}

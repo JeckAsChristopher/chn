@@ -1,0 +1,53 @@
+-- CHN 1.0 - Example 04: Functions
+--
+-- Functions are declared with func.
+-- Visibility keywords:
+--   (none)     module-private (default)
+--   public     callable from importing modules
+--   private    explicitly private
+--
+-- entry main() is the program's entry point.
+-- export func makes a function importable from other files.
+--
+-- Functions are first-class: they can be stored in variables,
+-- passed as arguments, and returned from other functions.
+
+-- A simple function with parameters and a return value
+func add(a, b) {
+    return a + b
+}
+
+-- A recursive function
+func factorial(n) {
+    if n <= 1 { return 1 }
+    return n * factorial(n - 1)
+}
+
+-- Functions as values: assign to a variable
+func double_val(x) { return x * 2 }
+
+-- Lambda (anonymous function): func(params) { body }
+-- Short lambda: (param) -> expr   or   param -> expr
+func make_adder(n) {
+    return func(x) { return x + n }
+}
+
+public entry main() {
+    stdo(add(3, 4))
+    stdo(factorial(6))
+    stdo(double_val(5))
+
+    let add10 = make_adder(10)
+    stdo(add10(7))
+
+    -- Lambda syntax
+    let square = (x) -> x * x
+    stdo(square(9))
+
+    -- Inline lambda
+    let nums = [1, 2, 3, 4, 5]
+    let cube = (v) -> v * v * v
+    for n in nums {
+        stdo(f"cube({n}) = {cube(n)}")
+    }
+}

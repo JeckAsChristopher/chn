@@ -1,0 +1,9 @@
+-- CHN 1.0 - Example 01: Hello World
+--
+-- The simplest CHN program.
+-- Every runnable CHN file needs a public entry main() function.
+-- stdo() prints a value followed by a newline.
+
+public entry main() {
+    stdo("Hello, world!")
+}

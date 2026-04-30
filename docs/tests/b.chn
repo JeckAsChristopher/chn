@@ -1,0 +1,2 @@
+imp::lib c
+export func sextuple(x) { return triple(x) * 2 }

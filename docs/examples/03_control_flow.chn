@@ -1,0 +1,63 @@
+-- CHN 1.0 - Example 03: Control Flow
+--
+-- if / else if / else
+-- while loops
+-- for-in loops (iterate over arrays)
+-- switch / case / default
+-- break and continue
+
+public entry main() {
+    -- Basic if/else
+    let x = 10
+    if x > 5 {
+        stdo("x is greater than 5")
+    } else if x == 5 {
+        stdo("x is exactly 5")
+    } else {
+        stdo("x is less than 5")
+    }
+
+    -- while loop
+    let count = 0
+    while count < 3 {
+        stdo(f"count is {count}")
+        count = count + 1
+    }
+
+    -- for-in loop: iterates over array elements
+    let fruits = ["apple", "banana", "cherry"]
+    for fruit in fruits {
+        stdo(f"fruit: {fruit}")
+    }
+
+    -- range() generates a sequence of numbers
+    -- range(stop) -> 0 to stop-1
+    -- range(start, stop) -> start to stop-1
+    -- range(start, stop, step)
+    for i in range(5) {
+        stdo(f"  i={i}")
+    }
+
+    -- switch / case
+    let day = "Monday"
+    switch day {
+        case "Monday":
+            stdo("Start of the work week")
+        case "Friday":
+            stdo("End of the work week")
+        default:
+            stdo("Midweek")
+    }
+
+    -- break exits a loop early
+    for n in range(10) {
+        if n == 4 { break }
+        stdo(f"n={n}")
+    }
+
+    -- continue skips to the next iteration
+    for n in range(6) {
+        if n == 2 { continue }
+        stdo(f"n={n} (skipped 2)")
+    }
+}

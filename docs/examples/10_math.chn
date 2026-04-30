@@ -1,0 +1,44 @@
+-- CHN 1.0 - Example 10: Math Operations
+--
+-- CHN has built-in math functions.
+-- Operators: + - * / % ** (power)
+-- Bitwise:   & | ^ ~ << >>
+
+func floor_val(x)  { if x >= 0 { return x - (x % 1) } return x - (x % 1) - 1 }
+func abs_val(x)    { if x < 0 { return -x } return x }
+func max_val(a, b) { if a > b { return a } return b }
+func min_val(a, b) { if a < b { return a } return b }
+func clamp_val(x, lo, hi) { return min_val(hi, max_val(lo, x)) }
+
+func pow_val(base, exp) {
+    let result = 1
+    let n = 0
+    while n < exp { result = result * base; n = n + 1 }
+    return result
+}
+
+public entry main() {
+    stdo(10 + 3)
+    stdo(10 - 3)
+    stdo(10 * 3)
+    stdo(10 / 4)
+    stdo(10 % 3)
+    stdo(2 ** 10)
+
+    stdo(5 > 3)
+    stdo(5 == 5)
+    stdo(true && false)
+    stdo(true || false)
+    stdo(!true)
+
+    stdo(0b1010 & 0b1100)
+    stdo(0b1010 | 0b1100)
+    stdo(1 << 4)
+    stdo(256 >> 4)
+
+    stdo(abs_val(-42))
+    stdo(max_val(10, 20))
+    stdo(min_val(10, 20))
+    stdo(clamp_val(15, 0, 10))
+    stdo(pow_val(2, 8))
+}

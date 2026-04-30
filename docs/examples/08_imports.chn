@@ -1,0 +1,38 @@
+-- CHN 1.0 - Example 08: Imports and Modules
+--
+-- imp <name>       imports a .chn file by name (searches lib paths)
+-- imp::lib <name>  imports a compiled CCO bundle
+-- export func      marks a function importable by other files
+--
+-- Module search order:
+--   1. Same directory as the importing file
+--   2. chn-libs/ subdirectory (walking up toward root)
+--   3. Installation lib directory
+--
+-- This file demonstrates utility functions that could live in a library.
+-- To use multi-file imports, compile the lib first:
+--   chn lib.chn -oc lib.cco
+-- Then import it:
+--   imp::lib lib
+
+export func clamp(x, lo, hi) {
+    if x < lo { return lo }
+    if x > hi { return hi }
+    return x
+}
+
+export func lerp(a, b, t) {
+    return a + (b - a) * t
+}
+
+export func map_range(x, in_lo, in_hi, out_lo, out_hi) {
+    let t = (x - in_lo) / (in_hi - in_lo)
+    return lerp(out_lo, out_hi, t)
+}
+
+public entry main() {
+    stdo(clamp(15, 0, 10))
+    stdo(clamp(-5, 0, 10))
+    stdo(lerp(0, 100, 0.25))
+    stdo(map_range(5, 0, 10, 0, 100))
+}

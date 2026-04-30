@@ -1,0 +1,48 @@
+-- CHN 1.0 - Example 05: Arrays
+--
+-- Arrays are ordered, resizable sequences.
+-- Index with arr[i] (0-based).
+-- Methods: length(), push(), pop(), contains(), join(), map() etc.
+
+public entry main() {
+    let arr = [10, 20, 30, 40, 50]
+
+    -- Length
+    stdo(f"length: {arr.length()}")
+
+    -- Index access
+    stdo(f"first: {arr[0]}")
+    stdo(f"last:  {arr[arr.length() - 1]}")
+
+    -- Push and pop
+    arr.push(60)
+    stdo(f"after push(60): {arr}")
+    let popped = arr.pop()
+    stdo(f"popped: {popped}")
+
+    -- Iteration
+    for val in arr {
+        stdo(f"  {val}")
+    }
+
+    -- contains
+    stdo(f"contains 30: {arr.contains(30)}")
+    stdo(f"contains 99: {arr.contains(99)}")
+
+    -- join: concatenate with separator
+    let words = ["CHN", "is", "fast"]
+    stdo(words.join(" "))
+
+    -- Nested arrays (matrix)
+    let matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    for row in matrix {
+        stdo(row.join(", "))
+    }
+
+    -- Build an array with a loop
+    let squares = []
+    for i in range(1, 6) {
+        squares.push(i * i)
+    }
+    stdo(f"squares: {squares}")
+}

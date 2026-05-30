@@ -296,6 +296,7 @@ static std::string make_prompt(const Depth &d) {
 }
 
 extern "C" void chn_repl_run(void) {
+    chn::MemoryHandler::install();
     print_banner();
     history_load();
 
@@ -329,6 +330,11 @@ extern "C" void chn_repl_run(void) {
             if (line.substr(0, 6) == ":load ") {
                 std::string path = line.substr(6);
                 while (!path.empty() && path.front() == ' ') path.erase(path.begin());
+                while (!path.empty() && (path.back() == ' ' || path.back() == '\t' ||
+                                         path.back() == '\r' || path.back() == '\n'))
+                    path.pop_back();
+                if (!path.empty() && path.front() == '"' && path.back() == '"' && path.size() >= 2)
+                    path = path.substr(1, path.size() - 2);
                 if (path.empty())
                     std::fprintf(stderr, "usage: :load <file.chn>\n");
                 else

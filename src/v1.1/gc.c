@@ -191,7 +191,7 @@ ObjString *gc_string(const char *chars, int len){
     if(existing) return existing;
 
     
-    ObjString *s=(ObjString*)GC_ALLOC(sizeof(ObjString)+(size_t)(len<=SLAB_STR_MAX?0:len+1));
+    ObjString *s=(ObjString*)GC_ALLOC(sizeof(ObjString)+(size_t)(len+1));
     s->header.type=OBJ_STRING;
     s->header.color=GC_WHITE;
     s->header.generation=GEN_YOUNG;
@@ -201,41 +201,7 @@ ObjString *gc_string(const char *chars, int len){
     s->header.gen_next=gc.young_list; gc.young_list=(Obj*)s;
     s->len=len;
     s->hash=hash;
-
-    if(len<=SLAB_STR_MAX){
-        
-        s->slab_alloc=true;
-        
-
-        
-
-        
-        
-        
-        
-        gc.objects=s->header.next;
-        gc.young_list=s->header.gen_next;
-        
-        gc.bytes_allocated-=sizeof(ObjString);
-        gc.total_allocated-=sizeof(ObjString);
-
-        
-        s=(ObjString*)GC_ALLOC(sizeof(ObjString)+(size_t)(len+1));
-        s->header.type=OBJ_STRING;
-        s->header.color=GC_WHITE;
-        s->header.generation=GEN_YOUNG;
-        s->header.age=0;
-        s->header.pin_count=0;
-        s->header.next=gc.objects;     gc.objects=(Obj*)s;
-        s->header.gen_next=gc.young_list; gc.young_list=(Obj*)s;
-        s->len=len;
-        s->hash=hash;
-        
-
-        s->slab_alloc=false;
-    } else {
-        s->slab_alloc=false;
-    }
+    s->slab_alloc=false;
 
     if(len>0) memcpy(s->chars,chars,(size_t)len);
     s->chars[len]='\0';

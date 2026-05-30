@@ -589,6 +589,7 @@ dispatch_switch:;
         arr_push(AS_ARRAY(TOP()),val); DISPATCH(); }
     CASE(OP_ARRAY_INDEX):{
         Value iv=POP(),av=POP();
+        if(IS_NIL(av)) RT_ERROR_TYPE("Attempted to index nil value.");
         if(IS_DICT(av)){
             if(!IS_STRING(iv)) RT_ERROR_TYPE("dict key must be a string, got %s",vtype(iv));
             PUSH(gc_dict_get(AS_DICT(av),AS_STRING(iv))); DISPATCH();
@@ -616,6 +617,7 @@ dispatch_switch:;
 
     CASE(OP_ARRAY_SET):{
         Value val=POP(),iv=POP(),av=POP();
+        if(IS_NIL(av)) RT_ERROR_TYPE("Attempted to index nil value.");
         if(IS_DICT(av)){
             if(!IS_STRING(iv)) RT_ERROR_TYPE("dict key must be a string, got %s",vtype(iv));
             gc_dict_set(AS_DICT(av),AS_STRING(iv),val);
@@ -636,6 +638,7 @@ dispatch_switch:;
 
     CASE(OP_ARRAY_LEN):{
         Value v=POP();
+        if(IS_NIL(v))         RT_ERROR_TYPE("Attempted to index nil value.");
         if(IS_ARRAY(v))       PUSH(NUMBER_VAL(AS_ARRAY(v)->len));
         else if(IS_STRING(v)) PUSH(NUMBER_VAL(AS_STRING(v)->len));
         else if(IS_DICT(v))   PUSH(NUMBER_VAL(AS_DICT(v)->count));
@@ -648,6 +651,8 @@ dispatch_switch:;
             RT_ERROR("internal: method call with %u argument(s) but stack only has %d value(s)",
                      (unsigned)argc, vm->stack_top);
         Value av=vm->stack[vm->stack_top-argc-1];
+
+        if(IS_NIL(av)) RT_ERROR_TYPE("Attempted to index nil value.");
 
         
         if(mid==METHOD_LENGTH){
@@ -988,12 +993,14 @@ dispatch_switch:;
     CASE(OP_DICT_SET):{
         
         Value val=POP(),key=POP(),dv=POP();
+        if(IS_NIL(dv)) RT_ERROR_TYPE("Attempted to index nil value.");
         if(!IS_DICT(dv)) RT_ERROR_TYPE("DICT_SET on non-dict");
         if(!IS_STRING(key)) RT_ERROR_TYPE("dict key must be a string");
         gc_dict_set(AS_DICT(dv),AS_STRING(key),val);
         PUSH(dv); DISPATCH(); }
     CASE(OP_DICT_GET):{
         Value key=POP(),dv=POP();
+        if(IS_NIL(dv)) RT_ERROR_TYPE("Attempted to index nil value.");
         if(!IS_DICT(dv)) RT_ERROR_TYPE("DICT_GET on non-dict");
         if(!IS_STRING(key)) RT_ERROR_TYPE("dict key must be a string");
         PUSH(gc_dict_get(AS_DICT(dv),AS_STRING(key))); DISPATCH(); }
@@ -1002,6 +1009,7 @@ dispatch_switch:;
     CASE(OP_FOREACH_INIT):{
         
         Value iterable=POP();
+        if(IS_NIL(iterable)) RT_ERROR_TYPE("Attempted to iterate nil value.");
         if(!IS_ARRAY(iterable)) RT_ERROR_TYPE("for-in requires an array, got %s",vtype(iterable));
         PUSH(iterable);
         PUSH(NUMBER_VAL(0)); DISPATCH(); }

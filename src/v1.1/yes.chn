@@ -1,0 +1,3 @@
+public entry main() {
+  stdo("Hello World!");
+}

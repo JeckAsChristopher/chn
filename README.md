@@ -2,31 +2,29 @@
   <img src="assets/chn_logo.png" alt="CHN Logo" width="320"/>
 </p>
 
-<h1 align="center">CHN 1.0</h1>
+<h1 align="center">CHN 1.1</h1>
 
 <p align="center">
   <a href="https://www.apache.org/licenses/LICENSE-2.0">
     <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"/>
   </a>
-  <img src="https://img.shields.io/badge/version-1.0-00bcd4.svg" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-1.1-00bcd4.svg" alt="Version"/>
   <img src="https://img.shields.io/badge/built%20with-C99-orange.svg" alt="Built with C99"/>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Android%20%7C%20macOS-informational.svg" alt="Platform"/>
-  <img src="https://img.shields.io/badge/maintained-yes-brightgreen.svg" alt="Maintained"/>
-  <img src="https://img.shields.io/badge/contributions-welcome-blueviolet.svg" alt="Contributions Welcome"/>
 </p>
 
-CHN is a fast, lightweight scripting language built entirely in C with its own bytecode virtual machine and zero external dependencies. It is designed to be easy to read and write while remaining close to the metal. Source files compile to a compact bytecode format and run on a stack based VM with a generational garbage collector, tail call optimization, and a full standard library covering files, networking, math, and OS interaction.
+CHN is a scripting language written in C99. it compiles source files to bytecode and runs them on a stack-based virtual machine with a generational garbage collector. the entire implementation -- lexer, parser, compiler, VM, GC, and standard library -- fits in a single binary under 300 KB with no external dependencies beyond libc and libm.
 
-CHN runs anywhere POSIX is available. It works on Linux, macOS, and Android including Termux on AArch64 hardware. A single binary is all you need. There is no runtime to install, no package manager to configure, and no virtual environment to activate.
+version 1.1 adds a generational GC with a slab allocator for short strings, a string intern table, a three-tier module system, function visibility levels, a full networking library with TLS support, binary I/O, and a C++ memory layer with RAII guards around the VM and GC.
 
-Licensed under the Apache License 2.0. Copyright 2025 Jeck Christopher Anog.
+licensed under the Apache License 2.0. Copyright 2025 Jeck Christopher Anog.
 
 ---
 
 ## Table of Contents
 
 - [Why CHN](#why-chn)
-- [Features](#features)
+- [What Changed in 1.1](#what-changed-in-11)
 - [Building](#building)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
@@ -65,63 +63,76 @@ Licensed under the Apache License 2.0. Copyright 2025 Jeck Christopher Anog.
 
 ## Why CHN
 
-Most scripting languages carry significant runtime weight. They come with large standard libraries, complex dependency trees, or virtual machines that take time to start. CHN takes the opposite approach. The entire language, compiler, virtual machine, garbage collector, and standard library compile into a single C binary under 200 KB. It starts instantly, uses minimal memory, and has no dependencies beyond libc and libm.
+most scripting languages carry significant runtime weight -- large standard libraries, dependency trees, or VMs that take time to spin up. CHN takes the opposite approach. the whole language compiles into a single C binary, starts instantly, uses minimal memory, and has no installation step. copy the binary to your PATH and its ready.
 
-CHN is also honest about what it is. It does not try to be Python or JavaScript. It is a focused scripting language for developers who want to write small tools, automate tasks, build libraries, or explore language implementation without fighting a bloated ecosystem. The syntax is clean, the error messages point at real source locations, and the module system is straightforward.
+CHN does not try to be Python or JavaScript. its a focused tool for writing small scripts, automating tasks, building distributable library bundles, or learning how a bytecode language works from the inside out. the syntax is clean, error messages point at real source locations, and the module system is straightforward.
 
 ---
 
-## Features
+## What Changed in 1.1
 
-- Single pass bytecode compiler with three optimization levels
-- Stack based virtual machine with tail call optimization
-- Generational garbage collector with generational young and old heaps
-- Slab allocator for short strings, reducing heap fragmentation
-- Weak reference string intern table for deduplication
-- First class functions, closures, and anonymous lambdas
-- F-string interpolation supporting arbitrary expressions
-- try, catch, and throw error handling with nestable scopes
-- Three tier module system: source files, compiled bytecode, and CCO bundles
-- Function visibility: public, private, and protected
-- Comprehensive standard library covering OS, files, math, networking, and binary I/O
-- Interactive REPL with AST dump and bytecode disassembly modes
-- Optional bytecode minification for smaller distributed bundles
-- Runtime argument passing via os::args()
-- Colored, location-aware error output
+version 1.0 shipped a working bytecode compiler and VM. version 1.1 expands the runtime significantly.
+
+**GC rewrite** -- the garbage collector is now generational. newly allocated objects enter a young generation. objects that survive enough minor collections get promoted to old. short strings (under 128 bytes) are carved from 64 KB slab arenas instead of individual heap allocations. a weak-reference intern table deduplicates string values so identical strings share one allocation.
+
+**C++ memory layer** -- `src/memory/` adds a C++ wrapper around the C core. `MemoryHandler` exposes GC stats and memory reporting. `RAII.h` provides `MallocGuard`, `ChunkGuard`, `VMGuard`, and `defer` so the REPL and embedding code can manage resources without manual cleanup on every exit path.
+
+**Networking** -- `native_net.c` adds TCP, UDP, HTTP, and TLS native functions. the TLS layer wraps OpenSSL or a platform TLS provider. on systems without TLS support, `native_net_stub.c` provides stub implementations that return errors.
+
+**Binary I/O** -- `bin::read` and `bin::write` let scripts read and write raw byte arrays to files.
+
+**Module system** -- three import forms are now supported: bare name, relative path, and `imp::lib` for precompiled CCO bundles. each file is loaded at most once. circular imports are detected and blocked.
+
+**Function visibility** -- `public`, `private`, `protected`, and `export` keywords control cross-file and cross-bundle access. visibility is enforced at compile time.
+
+**Bytecode formats** -- three artifact types: `.chn2` for compiled programs, `.function` for exported function bundles, and `.cco` for multi-unit compiled objects. CCO files embed their dependency list so the runtime can resolve them automatically.
+
+**REPL** -- the REPL now supports multi-line input with bracket depth tracking, persistent history in `~/.chn_history`, `:load`, `:ast`, `:dis`, `:gc`, `:mem`, `:time`, and `:reset` commands, and optional readline integration.
 
 ---
 
 ## Building
 
-CHN is written in C99 with POSIX extensions. There are no third party dependencies. To build, compile all `.c` files in `src/v1.0/` and link with libm.
+CHN is written in C99 with POSIX extensions. version 1.1 has a C++ wrapper layer (C++11 or later) for the REPL and memory management. the core language files are plain C99.
 
-On Linux or macOS with gcc:
-
-```sh
-gcc -O2 -o chn src/v1.0/*.c -lm
-```
-
-On Android or Termux with clang:
+**build the full binary with CMake (recommended for 1.1):**
 
 ```sh
-clang -O2 -o chn src/v1.0/*.c -lm
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
-On any system with cc:
+the CMake build links the C99 core, the C++ memory layer, and optionally readline and OpenSSL if found on the system.
+
+**build just the C99 core (no REPL, no TLS):**
+
+on Linux or macOS with gcc:
 
 ```sh
-cc -O2 -std=c99 -o chn src/v1.0/*.c -lm
+gcc -O2 -o chn src/v1.1/*.c -lm
 ```
 
-The output is a single self-contained binary. Copy it to any directory on your PATH and it is ready to use. No installation scripts, no shared libraries, no configuration files.
+on Android or Termux with clang:
 
-To make library bundles discoverable, create a `chn-libs/` directory in the same location as the binary. The runtime searches that directory automatically when resolving bare import names.
+```sh
+clang -O2 -o chn src/v1.1/*.c -lm
+```
+
+this produces a working binary without the enhanced REPL and without TLS. networking functions that require TLS will return an error at runtime.
+
+**to enable readline:**
+
+```sh
+gcc -O2 -DHAVE_READLINE -o chn src/v1.1/*.c src/memory/*.cpp -lm -lreadline -lstdc++
+```
+
+**library discovery** -- the runtime searches a `chn-libs/` directory when resolving bare import names. create one next to the binary or in any parent directory of your source files.
 
 ---
 
 ## Quick Start
 
-Save this to `hello.chn`:
+save this to `hello.chn`:
 
 ```chn
 public entry main() {
@@ -129,13 +140,13 @@ public entry main() {
 }
 ```
 
-Run it:
+run it:
 
 ```sh
 chn hello.chn
 ```
 
-A slightly more complete example showing variables, a loop, and a function:
+a slightly more complete example:
 
 ```chn
 func greet(name) {
@@ -154,55 +165,55 @@ public entry main() {
 
 ## Usage
 
-Run a source file directly:
+run a source file directly:
 
 ```sh
 chn script.chn
 ```
 
-Pass arguments to the running program. Everything after the filename is available via `os::args()`:
+pass arguments to the running program. everything after the filename is available via `os::args()`:
 
 ```sh
 chn script.chn --port 8080 input.txt
 ```
 
-Run a compiled CCO bundle that has an entry point:
+run a compiled CCO bundle that has an entry point:
 
 ```sh
 chn app.cco
 ```
 
-Compile a source file to bytecode:
+compile a source file to bytecode:
 
 ```sh
 chn script.chn -c script.chn2
 ```
 
-Bundle multiple source files into a single CCO package:
+bundle multiple source files into a single CCO package:
 
 ```sh
 chn a.chn b.chn c.chn -oc mylib.cco
 ```
 
-Check syntax without running:
+check syntax without running:
 
 ```sh
 chn script.chn --check
 ```
 
-Dump the parsed AST:
+dump the parsed AST:
 
 ```sh
 chn script.chn --ast
 ```
 
-Disassemble compiled bytecode:
+disassemble compiled bytecode:
 
 ```sh
 chn script.chn --disasm
 ```
 
-Start the interactive REPL:
+start the interactive REPL:
 
 ```sh
 chn
@@ -214,7 +225,7 @@ chn
 
 ### Program Structure
 
-Every runnable CHN program defines exactly one `public entry main()` function. This function is the program entry point and must be marked both `public` and `entry`. A file without an entry point is treated as a library and can only be imported, not run directly.
+every runnable CHN program defines exactly one `public entry main()` function. a file without an entry point is treated as a library and can only be imported.
 
 ```chn
 public entry main() {
@@ -222,20 +233,20 @@ public entry main() {
 }
 ```
 
-Functions and variables can be defined before or after `main`. The order of declaration does not matter for top-level functions because the compiler resolves them in a single pass across the full file.
+functions and variables can be defined before or after `main`. the compiler resolves top-level names in a single pass across the full file so declaration order does not matter.
 
 ### Comments
 
-Comments begin with `--` and run to the end of the line. There are no block comments.
+comments begin with `--` and run to end of line. there are no block comments.
 
 ```chn
--- This entire line is a comment
-let x = 10  -- This is an inline comment
+-- this entire line is a comment
+let x = 10  -- inline comment
 ```
 
 ### Variables and Types
 
-Variables are declared with `let` or `var`. Both keywords are equivalent. All variables are block scoped and type is inferred from the assigned value.
+variables are declared with `let` or `var`. both keywords are equivalent. all variables are block-scoped and type is inferred from the assigned value.
 
 ```chn
 let count  = 0
@@ -249,15 +260,15 @@ CHN has seven built-in value types:
 
 | Type | Description |
 |------|-------------|
-| `number` | 64 bit IEEE 754 floating point |
-| `string` | Immutable UTF-8 text |
+| `number` | 64-bit IEEE 754 floating point |
+| `string` | immutable UTF-8 text |
 | `bool` | `true` or `false` |
-| `nil` | Absence of a value |
-| `array` | Ordered, resizable sequence |
-| `dict` | String keyed hash map |
-| `function` | First class callable |
+| `nil` | absence of a value |
+| `array` | ordered, resizable sequence |
+| `dict` | string-keyed hash map |
+| `function` | first-class callable |
 
-The `typeof` operator returns the type name as a string at runtime:
+the `typeof` operator returns the type name as a string at runtime:
 
 ```chn
 stdo(typeof 42)           -- number
@@ -269,13 +280,11 @@ stdo(typeof {a: 1})       -- dict
 stdo(typeof func() {})    -- function
 ```
 
-Variables can be reassigned freely. A variable initially holding a number can later hold a string. Type checking happens at runtime when an operation is performed.
-
 ### Operators
 
-CHN supports a full set of arithmetic, comparison, logical, bitwise, and membership operators.
+CHN supports arithmetic, comparison, logical, bitwise, and membership operators.
 
-Arithmetic operators produce numbers. Division always returns a float even when both operands are whole numbers. The `**` operator is exponentiation.
+arithmetic operators:
 
 ```
 +    addition
@@ -286,45 +295,29 @@ Arithmetic operators produce numbers. Division always returns a float even when 
 **   exponentiation
 ```
 
-Compound assignment operators modify a variable in place:
+compound assignment: `+=  -=  *=  /=  %=  **=`
+
+the `++` increment operator works as prefix and postfix. `--` is not available as a decrement operator because it conflicts with comment syntax. use `-= 1` instead.
+
+comparison operators return a bool:
 
 ```
-+=    -=    *=    /=    %=    **=
+==    !=    <    >    <=    >=
 ```
 
-The `++` increment operator works as both prefix and postfix. Note that `--` is not available as a decrement operator because it conflicts with comment syntax. Use `-= 1` instead.
-
-Comparison operators return a bool:
+logical operators:
 
 ```
-==    equal
-!=    not equal
-<     less than
->     greater than
-<=    less than or equal
->=    greater than or equal
+&&    ||    !
 ```
 
-Logical operators:
+bitwise operators work on numbers treated as 32-bit integers:
 
 ```
-&&    logical and
-||    logical or
-!     logical not
+&     |     ^     ~     <<    >>
 ```
 
-Bitwise operators work on numbers treated as 32 bit integers:
-
-```
-&     bitwise and
-|     bitwise or
-^     bitwise xor
-~     bitwise not
-<<    left shift
->>    right shift
-```
-
-The `in` operator tests membership. It works on arrays (value present), dicts (key present), and strings (substring present):
+the `in` operator tests membership in arrays, dicts, and strings:
 
 ```chn
 stdo(3 in [1, 2, 3])          -- true
@@ -332,15 +325,13 @@ stdo("x" in {x: 1, y: 2})    -- true
 stdo("lo" in "hello")         -- true
 ```
 
-The `not in` form is the negated equivalent.
-
-The `??` null coalescing operator returns the left side if it is not nil, otherwise the right side:
+the `??` null coalescing operator returns the left side if not nil, otherwise the right:
 
 ```chn
 let port = config.port ?? 8080
 ```
 
-The ternary operator selects between two values based on a condition:
+ternary operator:
 
 ```chn
 let label = score > 50 ? "pass" : "fail"
@@ -348,9 +339,7 @@ let label = score > 50 ? "pass" : "fail"
 
 ### Control Flow
 
-CHN has if/else, while, do-while, for-in, and switch statements.
-
-If statements evaluate a condition and run the matching block. Braces are required even for single line bodies:
+CHN has if/else, while, do-while, for-in, and switch. braces are required on all blocks.
 
 ```chn
 if x > 100 {
@@ -362,8 +351,6 @@ if x > 100 {
 }
 ```
 
-The while loop runs as long as its condition is true:
-
 ```chn
 let n = 10
 while n > 0 {
@@ -371,8 +358,6 @@ while n > 0 {
     n -= 1
 }
 ```
-
-The do-while loop always runs at least once before checking its condition:
 
 ```chn
 let i = 0
@@ -382,7 +367,7 @@ do {
 } while i < 3
 ```
 
-The for-in loop iterates over an array or a range. The loop variable is scoped to the loop body:
+for-in loop iterates over an array or a range:
 
 ```chn
 for item in ["a", "b", "c"] {
@@ -394,7 +379,7 @@ for i in range(5) {
 }
 ```
 
-`range()` generates a sequence of numbers. It accepts one, two, or three arguments:
+`range()` accepts one, two, or three arguments:
 
 ```chn
 range(5)          -- 0, 1, 2, 3, 4
@@ -402,7 +387,7 @@ range(2, 7)       -- 2, 3, 4, 5, 6
 range(0, 10, 2)   -- 0, 2, 4, 6, 8
 ```
 
-The switch statement compares a value against a series of cases and runs the first matching block. A `default` block runs when nothing matches:
+switch compares a value against cases and runs the first match:
 
 ```chn
 switch status {
@@ -410,18 +395,14 @@ switch status {
         stdo("OK")
     case 404:
         stdo("Not Found")
-    case 500:
-        stdo("Server Error")
     default:
         stdo("Unknown")
 }
 ```
 
-`break` exits a loop immediately. `continue` skips the rest of the current iteration and moves to the next. Both work inside `while`, `do-while`, and `for-in` loops.
+`break` exits a loop. `continue` skips to the next iteration.
 
 ### Functions
-
-Functions are declared with the `func` keyword followed by a name, a parameter list, and a body block. Parameters have no type annotations. Return values are inferred.
 
 ```chn
 func add(a, b) {
@@ -431,7 +412,7 @@ func add(a, b) {
 stdo(add(3, 7))   -- 10
 ```
 
-Functions are first class values. They can be stored in variables, passed as arguments, and returned from other functions:
+functions are first-class values. they can be stored in variables, passed as arguments, and returned:
 
 ```chn
 func apply(f, value) {
@@ -443,57 +424,28 @@ func triple(x) { return x * 3 }
 stdo(apply(triple, 5))   -- 15
 ```
 
-Recursive functions work naturally. The compiler recognizes direct tail calls and optimizes them to avoid growing the call stack:
+the compiler recognizes direct tail calls and eliminates them to avoid growing the call stack:
 
 ```chn
-func factorial(n) {
-    if n <= 1 { return 1 }
-    return n * factorial(n - 1)
-}
-
 func sum_to(n, acc) {
     if n == 0 { return acc }
     return sum_to(n - 1, acc + n)   -- tail call, stack does not grow
 }
 ```
 
-Functions can be nested. An inner function has access to the outer function's variables:
-
-```chn
-func outer(x) {
-    func inner(y) {
-        return x + y
-    }
-    return inner(10)
-}
-
-stdo(outer(5))   -- 15
-```
+functions can be nested. inner functions close over the outer scope.
 
 ### Lambdas and Closures
 
-Anonymous functions are written with `func` without a name, or with the arrow shorthand for single expression bodies.
-
-Full anonymous form:
+anonymous functions use `func` without a name, or the arrow shorthand for single-expression bodies:
 
 ```chn
 let square = func(x) { return x * x }
-stdo(square(9))   -- 81
-```
-
-Arrow form, single parameter:
-
-```chn
 let double = x -> x * 2
+let add    = (a, b) -> a + b
 ```
 
-Arrow form, multiple parameters:
-
-```chn
-let add = (a, b) -> a + b
-```
-
-Lambdas close over variables from the surrounding scope. The captured value is shared by reference:
+lambdas capture variables by reference from the surrounding scope:
 
 ```chn
 func make_counter() {
@@ -507,21 +459,18 @@ func make_counter() {
 let c = make_counter()
 stdo(c())   -- 1
 stdo(c())   -- 2
-stdo(c())   -- 3
 ```
 
-Lambdas work naturally with array higher-order methods:
-
 ```chn
-let nums = [1, 2, 3, 4, 5, 6]
+let nums   = [1, 2, 3, 4, 5, 6]
 let evens  = nums.filter(x -> x % 2 == 0)
-let doubled = evens.map(x -> x * 2)
-stdo(doubled)   -- [4, 8, 12]
+let result = evens.map(x -> x * 2)
+stdo(result)   -- [4, 8, 12]
 ```
 
 ### Arrays
 
-Arrays are ordered, resizable sequences that hold values of any type including mixed types and nested arrays. Index access is zero based.
+arrays are zero-indexed, ordered, resizable sequences. they hold values of any type including mixed types and nested arrays.
 
 ```chn
 let fruits = ["apple", "banana", "cherry"]
@@ -531,7 +480,7 @@ fruits.push("date")
 stdo(fruits.length())    -- 4
 ```
 
-Arrays support a large set of built-in methods:
+array methods:
 
 | Method | Description |
 |--------|-------------|
@@ -539,22 +488,22 @@ Arrays support a large set of built-in methods:
 | `push(v)` / `add(v)` / `append(v)` | append to end |
 | `pop()` | remove and return last element |
 | `shift()` | remove and return first element |
-| `insert(i, v)` | insert value at index |
+| `insert(i, v)` | insert at index |
 | `cut(i)` | remove element at index |
 | `remove(v)` | remove first occurrence of value |
-| `rall(v)` | remove all occurrences of value |
-| `contains(v)` | true if value is present |
-| `index_of(v)` | index of first occurrence or -1 |
+| `rall(v)` | remove all occurrences |
+| `contains(v)` | true if value present |
+| `index_of(v)` | index of first occurrence, -1 if absent |
 | `sort()` | sort in place |
 | `reverse()` | reverse in place |
 | `copy()` | shallow copy |
 | `fill(v)` | fill all slots with value |
 | `join(sep)` | concatenate elements into a string |
-| `map(f)` | return new array with function applied to each element |
-| `filter(f)` | return new array with only elements where function returns true |
+| `map(f)` | new array with function applied to each element |
+| `filter(f)` | new array with only elements where f returns true |
 | `reduce(f, init)` | fold elements into a single value |
 | `flat()` | flatten one level of nesting |
-| `unique()` | return deduplicated copy |
+| `unique()` | deduplicated copy |
 | `first()` | first element |
 | `last()` | last element |
 | `sum()` | sum of all numeric elements |
@@ -567,7 +516,7 @@ Arrays support a large set of built-in methods:
 
 ### Dicts
 
-Dicts are unordered string-keyed hash maps. They are created with `{}` literal syntax using bare identifier keys or string keys followed by colon-separated values.
+dicts are unordered string-keyed hash maps. created with `{}` literal syntax.
 
 ```chn
 let config = {
@@ -581,18 +530,7 @@ config.port = 3306
 config.name = "mydb"
 ```
 
-Nested dicts work naturally:
-
-```chn
-let app = {
-    server: { host: "0.0.0.0", port: 8080 },
-    db:     { host: "localhost", port: 5432 }
-}
-
-stdo(app.server.port)   -- 8080
-```
-
-Dict methods:
+dict methods:
 
 | Method | Description |
 |--------|-------------|
@@ -607,7 +545,7 @@ Dict methods:
 
 ### Structs
 
-The `struct` keyword defines a named constructor function that creates a dict with named fields and default values. Positional arguments are assigned to fields in declaration order.
+`struct` defines a named constructor function that creates a dict with named fields and default values. positional arguments fill fields in declaration order.
 
 ```chn
 struct Vector3 {
@@ -618,11 +556,9 @@ struct Vector3 {
 
 let pos = Vector3(1, 2, 3)
 stdo(pos.x)   -- 1
-stdo(pos.y)   -- 2
-stdo(pos.z)   -- 3
 ```
 
-The result is a plain dict so all dict methods apply. Structs are a convenience for constructing typed records without boilerplate.
+the result is a plain dict so all dict methods apply.
 
 ```chn
 struct Player {
@@ -638,7 +574,7 @@ stdo(f"{hero.name} has {hero.hp} HP")
 
 ### Strings and F-Strings
 
-Strings are immutable UTF-8 sequences. Concatenation uses `+`. Individual characters are accessed with index notation.
+strings are immutable UTF-8 sequences. concatenation uses `+`. characters accessed with index notation.
 
 ```chn
 let s = "Hello, CHN"
@@ -647,7 +583,7 @@ stdo(s.length())   -- 10
 stdo(s.upper())    -- HELLO, CHN
 ```
 
-F-strings are string literals prefixed with `f`. Any expression wrapped in `{}` inside an f-string is evaluated and converted to a string at runtime.
+f-strings are prefixed with `f`. any expression wrapped in `{}` is evaluated and converted to a string at runtime.
 
 ```chn
 let name = "world"
@@ -658,7 +594,7 @@ stdo(f"Double: {n * 2}")
 stdo(f"Type: {typeof name}")
 ```
 
-String methods:
+string methods:
 
 | Method | Description |
 |--------|-------------|
@@ -666,24 +602,24 @@ String methods:
 | `upper()` | uppercase copy |
 | `lower()` | lowercase copy |
 | `trim()` | strip leading and trailing whitespace |
-| `split(sep)` | split on separator, return array |
-| `contains(sub)` | true if substring is present |
-| `starts_with(s)` | true if string begins with s |
-| `ends_with(s)` | true if string ends with s |
+| `split(sep)` | split on separator |
+| `contains(sub)` | true if substring present |
+| `starts_with(s)` | true if starts with s |
+| `ends_with(s)` | true if ends with s |
 | `replace(old, new)` | replace first occurrence |
-| `find(sub)` | index of first occurrence or -1 |
+| `find(sub)` | index of first occurrence, -1 if absent |
 | `slice(start, len)` / `sub(start, len)` | return substring |
 | `reverse()` | reversed copy |
-| `to_num()` | parse string as number |
-| `pad_left(width, ch)` | left pad to width with character |
-| `pad_right(width, ch)` | right pad to width with character |
+| `to_num()` | parse as number |
+| `pad_left(width, ch)` | left-pad to width |
+| `pad_right(width, ch)` | right-pad to width |
 | `repeat(n)` | concatenate string with itself n times |
 | `char_at(i)` | single character at index |
 | `count(sub)` | count non-overlapping occurrences |
 
 ### Error Handling
 
-CHN uses `try`, `catch`, and `throw` for structured error handling. Any value can be thrown including strings, numbers, and dicts. The caught value is bound to the variable in the catch clause.
+CHN uses `try`, `catch`, and `throw`. any value can be thrown. the caught value is bound to the variable in the catch clause.
 
 ```chn
 func divide(a, b) {
@@ -699,70 +635,31 @@ try {
 }
 ```
 
-Throwing a dict gives structured error information:
+throwing a dict gives structured error information:
 
 ```chn
-func fetch(url) {
-    if !url.starts_with("http") {
-        throw { code: "INVALID_URL", message: f"bad url: {url}" }
-    }
-}
-
-try {
-    fetch("ftp://bad")
-} catch e {
-    stdo(e.code)
-    stdo(e.message)
-}
+throw { code: "INVALID_URL", message: f"bad url: {url}" }
 ```
 
-Try blocks can be nested. A throw inside a catch re-throws and is caught by the next outer handler:
-
-```chn
-try {
-    try {
-        throw "first"
-    } catch e {
-        stdo(f"inner caught: {e}")
-        throw f"wrapped: {e}"
-    }
-} catch e {
-    stdo(f"outer caught: {e}")
-}
-```
+try blocks can be nested. a throw inside a catch re-throws and is caught by the next outer handler.
 
 ### Imports and Modules
 
-CHN resolves imports at compile time. There are three forms.
-
-Import a module by bare name. The runtime searches the lib paths automatically:
+CHN resolves imports at compile time. three forms:
 
 ```chn
-imp mathlib
-imp utils
+imp mathlib           -- bare name, runtime searches lib paths
+imp ./helpers.chn     -- relative path
+imp::lib mathlib      -- precompiled CCO bundle
 ```
 
-Import a module by relative path:
+module search order for bare names:
 
-```chn
-imp ./helpers.chn
-imp ../shared/types.chn
-```
-
-Import a precompiled CCO bundle:
-
-```chn
-imp::lib mathlib
-imp::lib ./bundles/graphics
-```
-
-Module search order for bare names:
-
-1. Same directory as the importing source file
+1. same directory as the importing file
 2. `chn-libs/` walking up from the importing file toward the filesystem root
 3. `chn-libs/` beside the CHN binary
 
-Functions must be explicitly marked `export` to be visible to importers:
+functions must be marked `export` to be visible to importers:
 
 ```chn
 export func clamp(x, lo, hi) {
@@ -771,30 +668,23 @@ export func clamp(x, lo, hi) {
     return x
 }
 
-export func lerp(a, b, t) {
-    return a + (b - a) * t
-}
-
--- private, not visible outside this file
-func internal_helper(x) {
+func internal_helper(x) {   -- not exported, not visible outside this file
     return x * x
 }
 ```
 
-Each file is loaded at most once per program run. Circular imports are detected and prevented automatically.
+each file is loaded at most once per program run. circular imports are detected and blocked.
 
 ### Visibility
-
-Functions have three access levels that control where they can be called from.
 
 | Keyword | Access |
 |---------|--------|
 | `public` | callable from any file |
-| `private` | only callable within the same source file |
-| `protected` | callable within the same CCO bundle but not from outside it |
+| `private` | only within the same source file |
+| `protected` | within the same CCO bundle, not from outside |
 | (none) | defaults to private |
 
-The `entry` keyword designates the program entry point and must always be combined with `public`:
+`entry` designates the program entry point and must be combined with `public`:
 
 ```chn
 public entry main() {
@@ -802,7 +692,7 @@ public entry main() {
 }
 ```
 
-Visibility is enforced at compile time. Calling a private function from another file is a compile error.
+visibility is enforced at compile time. calling a private function from another file is a compile error.
 
 ---
 
@@ -812,8 +702,8 @@ Visibility is enforced at compile time. Calling a private function from another 
 
 ```chn
 stdo(value)          -- print value followed by newline
-stdi("prompt: ")     -- print without newline, used for prompts
-let line = input()   -- read one line from stdin, returns string
+stdi("prompt: ")     -- print without newline
+let line = input()   -- read one line from stdin
 ```
 
 ### OS
@@ -828,8 +718,8 @@ os::setenv("KEY", "value")  -- set environment variable
 os::unsetenv("KEY")         -- unset environment variable
 os::args()                  -- runtime arguments as array of strings
 os::platform()              -- "linux", "mac", or "windows"
-os::hostname()              -- system hostname as string
-os::pid()                   -- current process ID as number
+os::hostname()              -- system hostname
+os::pid()                   -- current process ID
 os::system("ls -la")        -- run shell command, return exit code
 os::chdir("/tmp")           -- change working directory
 os::getcwd()                -- get current working directory
@@ -839,12 +729,12 @@ os::getcwd()                -- get current working directory
 
 ```chn
 file::read("path")             -- read entire file as string
-file::write("path", text)      -- write string to file, overwrite
+file::write("path", text)      -- write string to file
 file::append("path", text)     -- append string to file
 file::exists("path")           -- true if file exists
-file::delete("path")           -- delete file, return bool
+file::delete("path")           -- delete file
 file::size("path")             -- file size in bytes
-file::lines("path")            -- read file into array of lines
+file::lines("path")            -- read into array of lines
 file::copy("src", "dst")       -- copy file
 file::rename("old", "new")     -- rename or move file
 file::move("old", "new")       -- alias for rename
@@ -859,60 +749,49 @@ dir::remove("path")            -- remove empty directory
 ### Math
 
 ```chn
-math::floor(x)          -- round down
-math::ceil(x)           -- round up
-math::round(x)          -- round to nearest
-math::trunc(x)          -- truncate toward zero
-math::abs(x)            -- absolute value
-math::sign(x)           -- -1, 0, or 1
-math::sqrt(x)           -- square root
-math::pow(x, y)         -- x to the power y
-math::log(x)            -- natural logarithm
-math::log(x, base)      -- logarithm with arbitrary base
-math::log10(x)          -- base-10 logarithm
-math::sin(x)            -- sine (radians)
-math::cos(x)            -- cosine (radians)
-math::tan(x)            -- tangent (radians)
-math::atan2(y, x)       -- arctangent of y/x
-math::clamp(v, lo, hi)  -- constrain v to [lo, hi]
-math::lerp(a, b, t)     -- linear interpolation
-math::min(a, b)         -- smaller of two values
-math::max(a, b)         -- larger of two values
-math::random()          -- random float in [0, 1)
-math::random(n)         -- random float in [0, n)
-math::pi()              -- 3.14159265358979...
-math::e()               -- 2.71828182845904...
-math::is_nan(x)         -- true if x is NaN
-math::is_inf(x)         -- true if x is infinite
+math::floor(x)          math::ceil(x)           math::round(x)
+math::trunc(x)          math::abs(x)            math::sign(x)
+math::sqrt(x)           math::pow(x, y)         math::log(x)
+math::log(x, base)      math::log10(x)
+math::sin(x)            math::cos(x)            math::tan(x)
+math::atan2(y, x)
+math::clamp(v, lo, hi)  math::lerp(a, b, t)
+math::min(a, b)         math::max(a, b)
+math::random()          -- float in [0, 1)
+math::random(n)         -- float in [0, n)
+math::pi()              math::e()
+math::is_nan(x)         math::is_inf(x)
 ```
 
 ### Networking
 
 ```chn
-net::tcp_listen(port)                     -- open TCP listener, return socket
-net::tcp_accept(sock)                     -- accept incoming connection
-net::tcp_connect(host, port)              -- connect to remote host
+net::tcp_listen(port)                     -- open TCP listener
+net::tcp_accept(sock)                     -- accept connection
+net::tcp_connect(host, port)              -- connect to host
 net::send(sock, data)                     -- send string data
-net::recv(sock, max_bytes)                -- receive up to max_bytes
+net::recv(sock, max_bytes)                -- receive data
 net::close(sock)                          -- close socket
-net::dns(hostname)                        -- resolve hostname to IP
-net::peer_addr(sock)                      -- get remote address string
-net::set_timeout(sock, ms)                -- set read/write timeout
+net::dns(hostname)                        -- resolve hostname
+net::peer_addr(sock)                      -- get remote address
+net::set_timeout(sock, ms)                -- set timeout
 
 net::udp_bind(port)                       -- bind UDP socket
 net::udp_send(sock, host, port, data)     -- send UDP datagram
 net::udp_recv(sock, max_bytes)            -- receive UDP datagram
 
-net::http_get(url)                        -- perform HTTP GET, return body
-net::http_post(url, body)                 -- perform HTTP POST, return body
+net::http_get(url)                        -- HTTP GET, return body
+net::http_post(url, body)                 -- HTTP POST, return body
 
-net::tls_listen(port)                     -- open TLS listener
+net::tls_listen(port)                     -- TLS listener
 net::tls_accept(sock)                     -- accept TLS connection
 net::tls_connect(host, port)              -- connect with TLS
 net::tls_send(sock, data)                 -- send over TLS
 net::tls_recv(sock, max_bytes)            -- receive over TLS
 net::tls_close(sock)                      -- close TLS connection
 ```
+
+TLS functions require OpenSSL at build time. on systems without TLS, these return a runtime error.
 
 ### Binary I/O
 
@@ -925,68 +804,68 @@ bin::write_num("path", n)            -- write number as raw bytes
 ### Utility
 
 ```chn
-str(value)               -- convert any value to its string representation
+str(value)               -- convert any value to string
 len(value)               -- length of array, string, or dict
-range(stop)              -- generate 0 to stop-1
-range(start, stop)       -- generate start to stop-1
-range(start, stop, step) -- generate with step size
+range(stop)
+range(start, stop)
+range(start, stop, step)
 ```
 
 ---
 
 ## Bytecode and CCO Bundles
 
-CHN has three compiled artifact formats that serve different distribution needs.
+CHN has three compiled artifact formats.
 
-**`.chn2` program bytecode** is a single compiled program file containing the entry chunk, embedded function table, and a record of any imports it requires. It is produced with `-c`. It can be executed directly but cannot be recompiled or disassembled back to source.
+**`.chn2` program bytecode** -- a single compiled program containing the entry chunk, embedded function table, and import records. produced with `-c`. can be executed directly.
 
-**`.function` function bundle** contains only exported functions and no entry point. It is produced with `-c --func`. This format is useful for distributing a small set of utility functions without the overhead of a full CCO container.
+**`.function` function bundle** -- contains only exported functions, no entry point. produced with `-c --func`. useful for distributing a small set of utilities.
 
-**`.cco` CHN Compiled Object** is the primary distribution format. It packs one or more compiled source units into a single binary container. Units within the same CCO can reference each other regardless of visibility through bundle-internal linkage. If any unit contains a `public entry main()`, the CCO can be run directly. Otherwise it is a library and must be imported with `imp::lib`.
-
-CCO files embed their own import dependency list. When a CCO is executed, the runtime reads this list and resolves all required CCOs before running the entry chunk. This means you can distribute a CCO and its dependencies as a flat directory and they will all wire up automatically.
-
-Build a library CCO:
+**`.cco` CHN Compiled Object** -- packs one or more compiled source units into a single binary container. if any unit has `public entry main()`, the CCO can be run directly. otherwise it is a library imported with `imp::lib`. CCO files embed their own import dependency list so the runtime can resolve dependencies automatically from a flat directory.
 
 ```sh
-chn mathlib.chn -oc mathlib.cco
-```
-
-Build a runnable application CCO that imports the library:
-
-```sh
-chn app.chn -oc app.cco
-chn app.cco
-```
-
-Use `--no-minify` to produce human-inspectable bytecode for debugging:
-
-```sh
-chn mathlib.chn --no-minify -oc mathlib.cco
+chn mathlib.chn -oc mathlib.cco        -- build library CCO
+chn app.chn -oc app.cco                -- build runnable CCO
+chn app.cco                            -- run it
+chn mathlib.chn --no-minify -oc mathlib.cco    -- human-readable bytecode for debugging
 ```
 
 ---
 
 ## The REPL
 
-Running `chn` with no arguments starts the interactive REPL. Expressions and statements are executed immediately after you press Enter. The REPL maintains state between lines within the same session.
+running `chn` with no arguments starts the REPL. expressions and statements execute immediately. state persists between lines within the same session. history is saved to `~/.chn_history` (up to 500 entries).
 
 ```
-CHN 1.0  --  :q to quit  :ast/:dis to debug
+CHN 1.1  Interactive REPL
+Type :help for commands. :q or Ctrl-D to exit.
+
 chn> let x = 10
 chn> stdo(x * x)
 100
 chn> :q
+Bye!
 ```
+
+multi-line input: leave a `{`, `(`, or `[` open and press Enter. the prompt changes to `... N>` where N is the open bracket depth. close the brackets to execute.
 
 REPL commands:
 
 | Command | Effect |
 |---------|--------|
-| `:q` or `exit` or `quit` | exit the REPL |
+| `:q` or `exit` or `quit` | exit |
+| `:help` | show commands |
+| `:gc` | GC statistics |
+| `:mem` | full memory report |
+| `:vars` | global variable slot count |
+| `:clear` | clear the screen |
+| `:reset` | reset VM state and GC |
+| `:time` | toggle execution timing |
+| `:load <file>` | execute a .chn file in the current REPL context |
 | `:ast <expr>` | print the AST for an expression |
 | `:dis <expr>` | disassemble an expression to bytecode |
-| `:gc` | print garbage collector statistics |
+
+if readline is available at build time, the REPL uses it for line editing and history navigation. otherwise it falls back to `fgets`.
 
 ---
 
@@ -1002,20 +881,18 @@ chn <file.chn> -c                  compile to <file>.chn2
 chn a.chn b.chn -oc out.cco        bundle into CCO
 chn                                start REPL
 
-Flags:
+flags:
   -O0 / -O1 / -O2      optimization level (default -O2)
-  --check  / -k        syntax check, no execution
+  --check  / -k        syntax check only, no execution
   --disasm / -d        disassemble bytecode to stdout
   --ast    / -a        dump AST to stdout
   --func   / -f        compile to function bundle
   --no-minify          disable bytecode minification
-  --no-color           disable colored output
-  --color              force colored output
   --version / -v       print version string
   --help    / -h       print usage
 ```
 
-When running a source file, everything after the filename is passed to the program as runtime arguments via `os::args()`. CHN flags like `-O2` or `-c` that appear after the filename are still processed by CHN, not passed as runtime args. Use `--` to force everything after it to become runtime args:
+use `--` to force everything after it into `os::args()`:
 
 ```sh
 chn script.chn -- --version --help
@@ -1025,70 +902,69 @@ chn script.chn -- --version --help
 
 ## Running Tests
 
-The test suite lives at `docs/tests/test_all.sh`. It requires bash and a built `chn` binary. Tests cover arithmetic, string operations, control flow, function calls, closures, arrays, dicts, structs, error handling, switch statements, runtime arguments, CCO compilation, multi-level CCO import chains, and bytecode minification.
-
-Run with the binary on your PATH:
+the test suite is at `docs/tests/test_all.sh`. it requires bash and a built `chn` binary. tests cover arithmetic, strings, control flow, functions, closures, arrays, dicts, structs, error handling, switch, runtime arguments, CCO compilation, multi-level CCO import chains, and bytecode minification.
 
 ```sh
-bash docs/tests/test_all.sh
+bash docs/tests/test_all.sh           -- uses chn from PATH
+bash docs/tests/test_all.sh ./chn     -- uses a specific binary
 ```
 
-Or point at a specific binary:
-
-```sh
-bash docs/tests/test_all.sh ./chn
-```
-
-The script prints `PASS` or `FAIL` for each test case. On failure it shows the expected and actual output. The process exits with code 0 if all tests pass and code 1 if any fail.
+the script prints PASS or FAIL for each test case. on failure it shows expected and actual output. exits 0 if all pass, 1 if any fail.
 
 ---
 
 ## Architecture
 
-The implementation lives entirely in `src/v1.0/` and is split into focused modules.
+the implementation lives in `src/v1.1/` (C99 core) and `src/memory/` (C++ wrapper layer).
 
 | Module | Role |
 |--------|------|
-| `lexer.c` / `lexer.h` | Tokenizes source text into a token stream |
-| `parser.c` / `parser.h` | Recursive descent parser that produces an AST |
-| `ast.c` / `ast.h` | AST node types and pretty printer |
-| `compiler.c` / `compiler.h` | Single pass compiler from AST to bytecode chunks |
-| `vm.c` / `vm.h` | Stack based virtual machine that executes bytecode |
-| `gc.c` / `gc.h` | Generational garbage collector with slab allocator and intern table |
-| `func.c` / `func.h` | Function object definition and global function registry |
-| `bytecode.c` / `bytecode.h` | Serialization and deserialization for `.chn2`, `.function`, and `.cco` |
-| `native.c` / `native.h` | OS, file, math, binary, and utility native dispatch |
+| `lexer.c` / `lexer.h` | tokenizes source text |
+| `parser.c` / `parser.h` | recursive descent parser, produces AST |
+| `ast.c` / `ast.h` | AST node types and printer |
+| `compiler.c` / `compiler.h` | single-pass compiler from AST to bytecode chunks |
+| `vm.c` / `vm.h` | stack-based VM that executes bytecode |
+| `gc.c` / `gc.h` | generational GC with slab allocator and intern table |
+| `func.c` / `func.h` | function object and global function registry |
+| `bytecode.c` / `bytecode.h` | serialization for `.chn2`, `.function`, `.cco` |
+| `native.c` / `native.h` | OS, file, math, binary, and utility dispatch |
 | `native_net.c` | TCP, UDP, TLS, HTTP native functions |
-| `error.c` / `error.h` | Source-location-aware error reporting |
-| `common.h` | Shared value model, opcode table, method dispatch, constants |
-| `main.c` | CLI parsing, import resolution, REPL, program entry |
+| `error.c` / `error.h` | source-location-aware error reporting |
+| `common.h` | value model, opcode table, method dispatch, constants |
+| `main.c` | CLI parsing, import resolution, program entry |
+| `src/memory/MemoryHandler.cpp` | GC stats and memory reporting |
+| `src/memory/RAII.cpp` | RAII guards: MallocGuard, ChunkGuard, VMGuard, defer |
+| `src/memory/Repl.cpp` | interactive REPL |
+| `src/memory/MemoryTypes.cpp` | shared type definitions for the C++ layer |
 
-The VM maintains a flat value stack and a separate call frame stack. Each call frame stores the executing function, the current instruction pointer, and the base index into the value stack for that frame's locals. A parallel try-frame stack tracks active error handlers.
+**VM internals** -- the VM maintains a flat value stack and a separate call frame stack. each call frame stores the executing function, current instruction pointer, and base index into the value stack for that frame's locals. a parallel try-frame stack tracks active error handlers.
 
-The garbage collector runs generationally. Newly allocated objects enter the young generation. Objects that survive a configurable number of minor collections are promoted to the old generation. Small strings under 128 bytes are carved from 64 KB memory slabs, avoiding per-string heap allocations. A weak-reference intern table deduplicates short strings so identical string values share a single allocation. Write barriers keep inter-generational references consistent during minor collections.
+**GC internals** -- newly allocated objects enter the young generation. objects that survive a configurable number of minor collections are promoted to the old generation. short strings under 128 bytes are carved from 64 KB slab arenas. a weak-reference intern table deduplicates short strings so identical values share one allocation. write barriers keep inter-generational references consistent during minor collections.
 
-The bytecode format uses a section-based layout. Each file begins with a magic number and version field, followed by length-prefixed sections for imports, exports, function bodies, the entry chunk, debug symbols, and bundle-internal functions. The CCO container wraps multiple of these compiled units with a header that records unit count, which unit contains the entry point, and flags.
+**bytecode format** -- section-based layout. each file begins with a magic number and version field, followed by length-prefixed sections for imports, exports, function bodies, the entry chunk, debug symbols, and bundle-internal functions. the CCO container wraps multiple compiled units with a header recording unit count, which unit has the entry point, and flags.
+
+**compiler** -- single-pass from AST to bytecode. constant folding, dead-code elimination, and tail-call detection are performed at compile time under `-O2`. the compiler tracks open scopes, resolves local variables by slot index, and patches forward jump offsets in a second pass over the generated instruction stream.
 
 ---
 
 ## Runtime Limits
 
-These limits are compile-time constants defined in `common.h`. They can be changed and the project recompiled to suit larger workloads.
+these constants are defined in `common.h` and can be changed before recompiling.
 
 | Limit | Value |
 |-------|-------|
-| Max identifier length | 256 characters |
-| Max string literal length | 65536 characters |
-| Max function parameters | 64 |
-| Max call stack depth | 512 frames |
-| Max value stack size | 8192 values |
-| Max global variables | 1024 |
-| Max locals per function | 512 |
-| Max functions per compiler unit | 512 |
-| Max try handler nesting depth | 64 |
-| Max break/continue patch sites | 256 |
-| Max imported files per program | 256 |
-| Max source files per CCO bundle | 64 |
+| max identifier length | 256 characters |
+| max string literal length | 65536 characters |
+| max function parameters | 64 |
+| max call stack depth | 512 frames |
+| max value stack size | 8192 values |
+| max global variables | 1024 |
+| max locals per function | 512 |
+| max functions per compiler unit | 512 |
+| max try handler nesting depth | 64 |
+| max break/continue patch sites | 256 |
+| max imported files per program | 256 |
+| max source files per CCO bundle | 64 |
 
 ---
 

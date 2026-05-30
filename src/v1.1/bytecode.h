@@ -51,7 +51,8 @@ typedef enum {
 const char *bc_result_str(BCResult r);
 
 #define CCO_MAGIC          0x43434F00u
-#define CCO_VERSION        3           
+#define CCO_VERSION        4           
+#define CCO_VERSION_V3     3           
 #define CCO_VERSION_V2     2           
 #define CCO_VERSION_LEGACY 1           
 #define CCO_FLAG_HAS_ENTRY 0x0001      

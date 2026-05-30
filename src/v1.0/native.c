@@ -1,26 +1,11 @@
-/*
- * Copyright 2025 Jeck Christopher Anog
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include <stdlib.h>  /* NULL */
+#include <stdlib.h>  
 
-/* 1.0: runtime args set by main() after CLI parsing */
 char **g_runtime_argv = NULL;
 int    g_runtime_argc = 0;
 #ifndef _GNU_SOURCE
@@ -103,8 +88,8 @@ void native_dispatch(VM *vm, uint16_t id, uint8_t argc) {
         break;
     }
     case NATIVE_OS_ARGS: {
-        /* Return CLI arguments passed after the entry file.
-         * e.g.  chn4.4 script.chn --foo bar  ->  ["--foo", "bar"] */
+        
+
         ObjArray *arr = new_arr();
         for (int i = 0; i < g_runtime_argc; i++)
             gc_arr_push(arr, sv(g_runtime_argv[i]));
@@ -324,7 +309,7 @@ void native_dispatch(VM *vm, uint16_t id, uint8_t argc) {
     }
 
     case NATIVE_RANGE: {
-        /* range(stop)  range(start,stop)  range(start,stop,step) */
+        
         int n_start=0, n_stop=0, n_step=1;
         if(argc==1){ n_stop=(int)NUM(args[0]); }
         else if(argc>=2){ n_start=(int)NUM(args[0]); n_stop=(int)NUM(args[1]); }
@@ -337,12 +322,12 @@ void native_dispatch(VM *vm, uint16_t id, uint8_t argc) {
         break;
     }
     case NATIVE_STR: {
-        /* str(val) -> string representation of any value */
+        
         if(argc<1){ N_PUSH(sv("")); break; }
         Value v=args[0];
         if(IS_STRING(v)){ N_PUSH(v); break; }
         char buf[65536]; int pos=0;
-        /* reuse the same formatting logic as print_value */
+        
         switch(v.type){
             case VAL_NUMBER:
                 if(v.as.number==(long long)v.as.number)
@@ -362,7 +347,7 @@ void native_dispatch(VM *vm, uint16_t id, uint8_t argc) {
         break;
     }
     case NATIVE_LEN: {
-        /* len(val) -> length of array, string, or dict */
+        
         if(argc<1){ N_PUSH(NUMBER_VAL(0)); break; }
         Value v=args[0];
         if(IS_ARRAY(v))       N_PUSH(NUMBER_VAL((double)AS_ARRAY(v)->len));
@@ -454,7 +439,7 @@ void native_dispatch(VM *vm, uint16_t id, uint8_t argc) {
         break;
     }
     case NATIVE_MATH_RANDOM: {
-        /* Seed once on first call */
+        
         static int seeded=0;
         if(!seeded){ srand((unsigned)time(NULL)^(unsigned)getpid()); seeded=1; }
         double r=(double)rand()/(double)RAND_MAX;

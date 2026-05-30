@@ -66,6 +66,23 @@ typedef enum {
     NATIVE_MATH_LERP     = 0x0214,  
     NATIVE_MATH_IS_NAN   = 0x0215,  
     NATIVE_MATH_IS_INF   = 0x0216,  
+    
+    NATIVE_MATH_ASIN     = 0x0217,  
+    NATIVE_MATH_ACOS     = 0x0218,  
+    NATIVE_MATH_ATAN     = 0x0219,  
+    NATIVE_MATH_SINH     = 0x021A,  
+    NATIVE_MATH_COSH     = 0x021B,  
+    NATIVE_MATH_TANH     = 0x021C,  
+    NATIVE_MATH_EXP      = 0x021D,  
+    NATIVE_MATH_EXP2     = 0x021E,  
+    NATIVE_MATH_LOG2     = 0x021F,  
+    NATIVE_MATH_CBRT     = 0x0220,  
+    NATIVE_MATH_HYPOT    = 0x0221,  
+    NATIVE_MATH_GCD      = 0x0222,  
+    NATIVE_MATH_LCM      = 0x0223,  
+    NATIVE_MATH_FACTORIAL= 0x0224,  
+    NATIVE_MATH_DEG      = 0x0225,  
+    NATIVE_MATH_RAD      = 0x0226,  
 
     
     NATIVE_BIN_WRITE     = 0x0300,  
@@ -73,9 +90,24 @@ typedef enum {
     NATIVE_BIN_WRITE_NUM = 0x0302,
 
     
-    NATIVE_RANGE    = 0x0400,   
-    NATIVE_STR      = 0x0401,   
-    NATIVE_LEN      = 0x0402,   
+    NATIVE_RANGE         = 0x0400,  
+    NATIVE_STR           = 0x0401,  
+    NATIVE_LEN           = 0x0402,  
+    
+    NATIVE_TYPE_INT      = 0x0403,  
+    NATIVE_TYPE_FLOAT    = 0x0404,  
+    NATIVE_TYPE_BOOL     = 0x0405,  
+    NATIVE_STR_FORMAT    = 0x0406,  
+    NATIVE_STR_BYTES     = 0x0407,  
+    NATIVE_STR_FROM_BYTES= 0x0408,  
+    NATIVE_STR_ORD       = 0x0409,  
+    NATIVE_STR_CHR       = 0x040A,  
+    
+    NATIVE_OS_POPEN      = 0x000E,  
+    NATIVE_OS_CPU_COUNT  = 0x000F,  
+    
+    NATIVE_JSON_PARSE      = 0x0600, 
+    NATIVE_JSON_STRINGIFY  = 0x0601, 
 
     
     NATIVE_NET_TCP_LISTEN  = 0x0500,

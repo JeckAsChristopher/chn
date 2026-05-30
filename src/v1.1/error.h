@@ -27,8 +27,6 @@ typedef enum {
 } ChnErrorKind;
 
 void error_init         (const char *file, const char *source);
-void error_disable_color(void);
-void error_enable_color (void);
 
 void error_lex(int line, int col, int len, const char *fmt, ...);
 

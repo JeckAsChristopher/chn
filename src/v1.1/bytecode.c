@@ -900,42 +900,59 @@ BCResult bc_write_cco(const char *path,
         valid_units++;
     }
 
-    FILE *f = fopen(path, "wb");
-    if(!f){
-        for(int i = 0; i < count; i++) free(unit_data[i]);
-        free(unit_data); free(unit_len);
-        return BC_ERR_IO;
-    }
-
     
+
     uint16_t cco_flags      = (entry_unit_idx >= 0) ? CCO_FLAG_HAS_ENTRY : 0;
     uint16_t cco_entry_unit = (entry_unit_idx >= 0) ? (uint16_t)entry_unit_idx : CCO_NO_ENTRY;
-    uint8_t hdr[12];
+
+    
+    size_t payload_cap = 0;
+    for(int u = 0; u < count; u++){
+        const char *name = src_names[u] ? src_names[u] : "";
+        payload_cap += 2 + strlen(name) + 4 + unit_len[u];
+    }
+    uint8_t *payload = (uint8_t*)malloc(payload_cap ? payload_cap : 1);
+    if(!payload){
+        for(int i = 0; i < count; i++) free(unit_data[i]);
+        free(unit_data); free(unit_len);
+        return BC_ERR_OOM;
+    }
+    size_t payload_pos = 0;
+    for(int u = 0; u < count; u++){
+        const char *name = src_names[u] ? src_names[u] : "";
+        uint16_t nlen = (uint16_t)strlen(name);
+        payload[payload_pos++] = (uint8_t)(nlen & 0xFF);
+        payload[payload_pos++] = (uint8_t)(nlen >> 8);
+        memcpy(payload + payload_pos, name, nlen); payload_pos += nlen;
+        payload[payload_pos++] = (uint8_t)(unit_len[u] & 0xFF);
+        payload[payload_pos++] = (uint8_t)((unit_len[u] >> 8) & 0xFF);
+        payload[payload_pos++] = (uint8_t)((unit_len[u] >> 16) & 0xFF);
+        payload[payload_pos++] = (uint8_t)((unit_len[u] >> 24) & 0xFF);
+        memcpy(payload + payload_pos, unit_data[u], unit_len[u]); payload_pos += unit_len[u];
+        free(unit_data[u]);
+    }
+    free(unit_data); free(unit_len);
+
+    
+    uint32_t payload_csum = adler32(payload, payload_pos);
+
+    FILE *f = fopen(path, "wb");
+    if(!f){ free(payload); return BC_ERR_IO; }
+
+    
+    uint8_t hdr[16];
     hdr[0]=(uint8_t)(CCO_MAGIC&0xFF);         hdr[1]=(uint8_t)((CCO_MAGIC>>8)&0xFF);
     hdr[2]=(uint8_t)((CCO_MAGIC>>16)&0xFF);   hdr[3]=(uint8_t)((CCO_MAGIC>>24)&0xFF);
     hdr[4]=(uint8_t)(CCO_VERSION&0xFF);        hdr[5]=(uint8_t)((CCO_VERSION>>8)&0xFF);
     hdr[6]=(uint8_t)(cco_flags&0xFF);          hdr[7]=(uint8_t)((cco_flags>>8)&0xFF);
     hdr[8]=(uint8_t)((uint16_t)count&0xFF);    hdr[9]=(uint8_t)(((uint16_t)count>>8)&0xFF);
     hdr[10]=(uint8_t)(cco_entry_unit&0xFF);    hdr[11]=(uint8_t)((cco_entry_unit>>8)&0xFF);
-    fwrite(hdr, 1, 12, f);
-
-    
-    for(int u = 0; u < count; u++){
-        const char *name = src_names[u] ? src_names[u] : "";
-        uint16_t nlen = (uint16_t)strlen(name);
-        uint8_t nl[2]; nl[0]=(uint8_t)(nlen&0xFF); nl[1]=(uint8_t)(nlen>>8);
-        fwrite(nl, 1, 2, f);
-        fwrite(name, 1, nlen, f);
-        uint8_t dl[4];
-        dl[0]=(uint8_t)(unit_len[u]&0xFF);       dl[1]=(uint8_t)((unit_len[u]>>8)&0xFF);
-        dl[2]=(uint8_t)((unit_len[u]>>16)&0xFF); dl[3]=(uint8_t)((unit_len[u]>>24)&0xFF);
-        fwrite(dl, 1, 4, f);
-        fwrite(unit_data[u], 1, unit_len[u], f);
-        free(unit_data[u]);
-    }
-
+    hdr[12]=(uint8_t)(payload_csum&0xFF);       hdr[13]=(uint8_t)((payload_csum>>8)&0xFF);
+    hdr[14]=(uint8_t)((payload_csum>>16)&0xFF); hdr[15]=(uint8_t)((payload_csum>>24)&0xFF);
+    fwrite(hdr, 1, 16, f);
+    fwrite(payload, 1, payload_pos, f);
     fclose(f);
-    free(unit_data); free(unit_len);
+    free(payload);
     return BC_OK;
 }
 
@@ -964,7 +981,9 @@ static BCResult cco_open(const char *path, CCOFile *out){
     if(magic != CCO_MAGIC){ free(data); return BC_ERR_MAGIC; }
 
     uint16_t ver = (uint16_t)(data[4]|(data[5]<<8));
-    if(ver != CCO_VERSION && ver != CCO_VERSION_V2 && ver != CCO_VERSION_LEGACY){ free(data); return BC_ERR_VERSION; }
+    if(ver != CCO_VERSION && ver != CCO_VERSION_V3 && ver != CCO_VERSION_V2 && ver != CCO_VERSION_LEGACY){
+        free(data); return BC_ERR_VERSION;
+    }
 
     out->data = data; out->fsz = fsz; out->ver = ver;
     if(ver == CCO_VERSION_LEGACY){
@@ -974,6 +993,19 @@ static BCResult cco_open(const char *path, CCOFile *out){
         out->unit_count = (uint16_t)(data[6]|(data[7]<<8));
         out->entry_unit = CCO_NO_ENTRY;
         out->units_start = 8;
+    } else if(ver == CCO_VERSION){ 
+        if(fsz < 16){ free(data); return BC_ERR_TRUNCATED; }
+        out->flags      = (uint16_t)(data[6]|(data[7]<<8));
+        out->unit_count = (uint16_t)(data[8]|(data[9]<<8));
+        out->entry_unit = (uint16_t)(data[10]|(data[11]<<8));
+        
+        uint32_t stored_csum = (uint32_t)data[12]|((uint32_t)data[13]<<8)|
+                               ((uint32_t)data[14]<<16)|((uint32_t)data[15]<<24);
+        if((size_t)fsz > 16){
+            uint32_t actual_csum = adler32(data + 16, (size_t)fsz - 16);
+            if(actual_csum != stored_csum){ free(data); return BC_ERR_CHECKSUM; }
+        }
+        out->units_start = 16;
     } else {
         
         if(fsz < 12){ free(data); return BC_ERR_TRUNCATED; }

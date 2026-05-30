@@ -491,8 +491,6 @@ static void usage(const char *p){
 
 static bool is_chn_flag(const char *a){
     if(!strcmp(a,"--help")||!strcmp(a,"-h"))   return true;
-    if(!strcmp(a,"--no-color"))                return true;
-    if(!strcmp(a,"--color"))                   return true;
     if(!strcmp(a,"--version")||!strcmp(a,"-v")) return true;
     if(!strcmp(a,"--disasm")||!strcmp(a,"-d")) return true;
     if(!strcmp(a,"--ast")||!strcmp(a,"-a"))    return true;
@@ -552,8 +550,6 @@ int main(int argc, char **argv){
         }
 
         if(!strcmp(a,"--help")||!strcmp(a,"-h")){ usage(argv[0]); return 0; }
-        else if(!strcmp(a,"--no-color")){ error_disable_color(); }
-        else if(!strcmp(a,"--color"))   { error_enable_color();  }
         else if(!strcmp(a,"--version")||!strcmp(a,"-v")){
             printf("CHN %s\n", CHN_VERSION); return 0;
         }

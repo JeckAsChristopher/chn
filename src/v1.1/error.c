@@ -7,30 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-static int g_color = -1;
 
-static int colors_enabled(void) {
-    if (g_color >= 0) return g_color;
-    const char *nc   = getenv("NO_COLOR");
-    const char *term = getenv("TERM");
-    if (nc)                             { g_color = 0; return 0; }
-    if (term && strcmp(term,"dumb")==0) { g_color = 0; return 0; }
-    g_color = isatty(STDERR_FILENO) ? 1 : 0;
-    return g_color;
-}
-
-void error_disable_color(void) { g_color = 0; }
-void error_enable_color (void) { g_color = 1; }
-
-#define C(seq) (colors_enabled() ? (seq) : "")
-#define RED     C("")
-#define YELLOW  C("")
-#define CYAN    C("")
-#define BOLD    C("")
-#define DIM     C("")
-#define RESET   C("")
 
 const char *g_source_file = "<unknown>";
 const char *g_source_code = "";
@@ -94,11 +72,6 @@ static const char *kind_label(ChnErrorKind kind) {
     }
 }
 
-static const char *kind_color(ChnErrorKind kind) {
-    if (kind == ERR_WARNING) return YELLOW;
-    return RED;
-}
-
 static void print_diagnostic(
         ChnErrorKind kind,
         int line, int col, int tok_len,
@@ -108,11 +81,10 @@ static void print_diagnostic(
     if (kind != ERR_WARNING) g_had_error = true;
     if (g_suppress_errors) return;
 
-    const char *kcolor = kind_color(kind);
     const char *klabel = kind_label(kind);
 
     
-    fprintf(stderr, "%s%s%s: %s\n", kcolor, klabel, RESET, msg);
+    fprintf(stderr, "%s: %s\n", klabel, msg);
 
     if (line > 0) {
         char src_line[1024];
@@ -126,16 +98,13 @@ static void print_diagnostic(
 
         
         if (col > 0)
-            fprintf(stderr, "    %sat %s%s%s:%d:%d\n",
-                    DIM, RESET, CYAN, g_source_file, line, col);
+            fprintf(stderr, "    at %s:%d:%d\n", g_source_file, line, col);
         else
-            fprintf(stderr, "    %sat %s%s%s:%d\n",
-                    DIM, RESET, CYAN, g_source_file, line);
+            fprintf(stderr, "    at %s:%d\n", g_source_file, line);
 
         if (expanded[0]) {
             
-            fprintf(stderr, "  %*d | %s%s%s\n",
-                    ln_width, line, DIM, expanded, RESET);
+            fprintf(stderr, "  %*d | %s\n", ln_width, line, expanded);
 
             
             if (adj_col > 0 && tok_len > 0) {
@@ -150,20 +119,17 @@ static void print_diagnostic(
                 caret[pad + caret_len] = '\0';
 
                 
-                fprintf(stderr, "  %*s | %s%s%s\n",
-                        ln_width, "", kcolor, caret, RESET);
+                fprintf(stderr, "  %*s | %s\n", ln_width, "", caret);
             }
         }
     }
 
     
     if (expected && expected[0])
-        fprintf(stderr, "    %sexpected%s: %s\"%s\"%s\n",
-                BOLD, RESET, YELLOW, expected, RESET);
+        fprintf(stderr, "    expected: \"%s\"\n", expected);
 
     if (note && note[0])
-        fprintf(stderr, "    %snote%s: %s%s%s\n",
-                BOLD, RESET, CYAN, note, RESET);
+        fprintf(stderr, "    note: %s\n", note);
 
     fprintf(stderr, "\n");
 }

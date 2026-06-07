@@ -529,9 +529,11 @@ static ASTNode *parse_if(Parser *P){
     int line=P->current.line;
     bool has_paren_if=mat(P,TK_LPAREN);
     ASTNode *cond=parse_expr(P);
-    if(has_paren_if) consume(P,TK_RPAREN,"')'","close if condition");
+    if(P->panic_mode) return NULL;
+    if(has_paren_if){ consume(P,TK_RPAREN,"')'","close if condition"); if(P->panic_mode) return NULL; }
     skip_nl(P);
     ASTNode *then_b=parse_block(P);
+    if(P->panic_mode) return NULL;
     ASTNode *else_b=NULL;
     skip_nl(P);
     if(mat(P,TK_ELSE)){
@@ -549,9 +551,11 @@ static ASTNode *parse_while(Parser *P){
     bool has_paren=mat(P,TK_LPAREN);
     if(P->panic_mode) return NULL;
     ASTNode *cond=parse_expr(P);
-    if(has_paren) consume(P,TK_RPAREN,"')'","close while condition");
+    if(P->panic_mode) return NULL;
+    if(has_paren){ consume(P,TK_RPAREN,"')'","close while condition"); if(P->panic_mode) return NULL; }
     skip_nl(P);
     ASTNode *body=parse_block(P);
+    if(P->panic_mode) return NULL;
     ASTNode *n=node_alloc(NODE_WHILE,line);
     n->col = P->current.col; n->tok_len = P->current.length;
     n->while_stmt.condition=cond; n->while_stmt.body=body; return n;
@@ -806,11 +810,13 @@ static ASTNode *parse_assignment(Parser *P){
 
 static ASTNode *parse_null_coal(Parser *P){
     ASTNode *l=parse_or(P);
+    if(!l || P->panic_mode) return l;
     while(check(P,TK_NULL_COAL)){
         int line=P->current.line; adv(P);
         ASTNode *r=parse_or(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_NULL_COAL,line);
-    n->col = P->current.col; n->tok_len = P->current.length;
+        n->col = P->current.col; n->tok_len = P->current.length;
         n->null_coal.left=l; n->null_coal.right=r; l=n;
     }
     return l;
@@ -818,91 +824,156 @@ static ASTNode *parse_null_coal(Parser *P){
 
 static ASTNode *parse_or(Parser *P){
     ASTNode *l=parse_and(P);
-    while(check(P,TK_OR)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_OR)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_and(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_and(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_and(Parser *P){
     ASTNode *l=parse_equality(P);
-    while(check(P,TK_AND)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_AND)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_equality(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_equality(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_equality(Parser *P){
     ASTNode *l=parse_comparison(P);
-    while(check(P,TK_EQ)||check(P,TK_NEQ)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_EQ)||check(P,TK_NEQ)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_comparison(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_comparison(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_comparison(Parser *P){
     ASTNode *l=parse_bitwise_or(P);
-    
+    if(!l || P->panic_mode) return l;
+    /* note: only one comparison operator is allowed per expression (no chaining) */
     while(check(P,TK_LT)||check(P,TK_GT)||check(P,TK_LE)||check(P,TK_GE)||check(P,TK_IN)){
         int line=P->current.line;
         if(check(P,TK_IN)){
             adv(P); skip_nl_continuation(P);
             ASTNode *r=parse_bitwise_or(P);
+            if(!r || P->panic_mode) return l;
             ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length;
+            n->col = P->current.col; n->tok_len = P->current.length;
             n->binary.op=TK_IN; n->binary.left=l; n->binary.right=r; l=n;
         } else {
             int op=P->current.kind; adv(P); skip_nl_continuation(P);
+            ASTNode *r=parse_bitwise_or(P);
+            if(!r || P->panic_mode) return l;
             ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_bitwise_or(P); l=n;
+            n->col = P->current.col; n->tok_len = P->current.length;
+            n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
         }
     }
     return l;
 }
 static ASTNode *parse_bitwise_or(Parser *P){
     ASTNode *l=parse_bitwise_xor(P);
-    while(check(P,TK_PIPE)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_PIPE)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_bitwise_xor(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_bitwise_xor(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_bitwise_xor(Parser *P){
     ASTNode *l=parse_bitwise_and(P);
-    while(check(P,TK_CARET)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_CARET)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_bitwise_and(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_bitwise_and(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_bitwise_and(Parser *P){
     ASTNode *l=parse_shift(P);
-    while(check(P,TK_AMP)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_AMP)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_shift(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_shift(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_shift(Parser *P){
     ASTNode *l=parse_additive(P);
-    while(check(P,TK_LSHIFT)||check(P,TK_RSHIFT)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_LSHIFT)||check(P,TK_RSHIFT)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_additive(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_additive(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_additive(Parser *P){
     ASTNode *l=parse_multiply(P);
-    while(check(P,TK_PLUS)||check(P,TK_MINUS)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_PLUS)||check(P,TK_MINUS)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_multiply(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_multiply(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_multiply(Parser *P){
     ASTNode *l=parse_power(P);
-    while(check(P,TK_STAR)||check(P,TK_SLASH)||check(P,TK_PERCENT)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    while(check(P,TK_STAR)||check(P,TK_SLASH)||check(P,TK_PERCENT)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_power(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_power(P); l=n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; l=n;
+    }
     return l;
 }
 static ASTNode *parse_power(Parser *P){
     ASTNode *l=parse_unary(P);
-    if(check(P,TK_STARSTAR)){ int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+    if(!l || P->panic_mode) return l;
+    if(check(P,TK_STARSTAR)){
+        int op=P->current.kind,line=P->current.line; adv(P); skip_nl_continuation(P);
+        ASTNode *r=parse_power(P);
+        if(!r || P->panic_mode) return l;
         ASTNode *n=node_alloc(NODE_BINARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->binary.op=op; n->binary.left=l; n->binary.right=parse_power(P); return n; }
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->binary.op=op; n->binary.left=l; n->binary.right=r; return n;
+    }
     return l;
 }
 static ASTNode *parse_unary(Parser *P){
@@ -920,22 +991,28 @@ static ASTNode *parse_unary(Parser *P){
     }
     if(check(P,TK_MINUS)||check(P,TK_BANG)||check(P,TK_TILDE)){
         int op=P->current.kind,line=P->current.line; adv(P);
+        ASTNode *operand=parse_unary(P);
+        if(!operand || P->panic_mode) return NULL;
         ASTNode *n=node_alloc(NODE_UNARY,line);
-    n->col = P->current.col; n->tok_len = P->current.length; n->unary.op=op; n->unary.operand=parse_unary(P); return n;
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->unary.op=op; n->unary.operand=operand; return n;
     }
     if(check(P,TK_TYPEOF)){
         int line=P->current.line; adv(P);
+        ASTNode *operand=parse_unary(P);
+        if(!operand || P->panic_mode) return NULL;
         ASTNode *n=node_alloc(NODE_TYPEOF,line);
-    n->col = P->current.col; n->tok_len = P->current.length;
-        n->typeof_expr.operand=parse_unary(P); return n;
+        n->col = P->current.col; n->tok_len = P->current.length;
+        n->typeof_expr.operand=operand; return n;
     }
     return parse_postfix(P);
 }
 
 static ASTNode *parse_postfix(Parser *P){
     ASTNode *base=parse_primary(P);
-    if(!base) return base;
+    if(!base || P->panic_mode) return base;
     for(;;){
+        if(P->panic_mode) return base;  /* stop chaining on error */
         if(check(P,TK_DOT)){
             int line=P->current.line; adv(P);
             if(!check(P,TK_IDENT)){ error_parse(P->current.line, P->current.col, P->current.length,"field or method name","obj.field","expected identifier"); P->panic_mode=true; return base; }
@@ -950,6 +1027,7 @@ static ASTNode *parse_postfix(Parser *P){
                     do{ skip_nl(P); ASTNode *a=parse_expr(P); if(a) nl_push(&args,a); } while(mat(P,TK_COMMA));
                 }
                 skip_nl(P); consume(P,TK_RPAREN,"')'","close method args");
+                if(P->panic_mode) return base;
                 ASTNode *n=node_alloc(NODE_METHOD_CALL,line);
     n->col = P->current.col; n->tok_len = P->current.length;
                 n->method_call.object_expr=base;
@@ -967,7 +1045,9 @@ static ASTNode *parse_postfix(Parser *P){
         } else if(check(P,TK_LBRACKET)){
             int line=P->current.line; adv(P);
             ASTNode *idx=parse_expr(P);
+            if(P->panic_mode) return base;
             consume(P,TK_RBRACKET,"']'","close index with ']'");
+            if(P->panic_mode) return base;
             ASTNode *n=node_alloc(NODE_INDEX,line);
     n->col = P->current.col; n->tok_len = P->current.length;
             n->index.object_expr=base; n->index.index=idx;
@@ -990,6 +1070,7 @@ static ASTNode *parse_postfix(Parser *P){
                 do{ skip_nl(P); ASTNode *a=parse_expr(P); if(a) nl_push(&args,a); skip_nl(P); } while(mat(P,TK_COMMA));
             }
             skip_nl(P); consume(P,TK_RPAREN,"')'","close call args");
+            if(P->panic_mode) return base;
             ASTNode *n=node_alloc(NODE_CALL_EXPR,line);
     n->col = P->current.col; n->tok_len = P->current.length;
             n->call_expr.callee    = base;

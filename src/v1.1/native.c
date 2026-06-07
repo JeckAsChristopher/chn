@@ -26,7 +26,12 @@ int    g_runtime_argc = 0;
 #include <dirent.h>
 #include <unistd.h>
 
-#define N_PUSH(v)  do { vm->stack[vm->stack_top++] = (v); } while(0)
+#define N_PUSH(v)  do { \
+    if(vm->stack_top >= MAX_STACK){ \
+        fprintf(stderr, "[CHN] runtime error: native stack overflow\n"); \
+        return; \
+    } \
+    vm->stack[vm->stack_top++] = (v); } while(0)
 #define N_POP()    (vm->stack[--vm->stack_top])
 #define N_PEEK(n)  (vm->stack[vm->stack_top-1-(n)])
 

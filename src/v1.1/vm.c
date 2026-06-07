@@ -25,7 +25,15 @@ static inline void _v21_push(VM *vm, Value v){ vm->stack[vm->stack_top]=v; vm->s
 #define PUSH(v) do{ \
     if(vm->stack_top>=MAX_STACK){RT_ERROR_STACK("stack overflow");} \
     _v21_push(vm,(v)); }while(0)
-#define POP()       (vm->stack[--vm->stack_top])
+static inline Value _v21_pop(VM *vm){
+    if(vm->stack_top<=0){
+        error_runtime(0,"internal: value stack underflow");
+        vm->has_error=true;
+        return NIL_VAL;
+    }
+    return vm->stack[--vm->stack_top];
+}
+#define POP()       _v21_pop(vm)
 #define PEEK(n)     (vm->stack[vm->stack_top-1-(n)])
 #define TOP()        PEEK(0)
 
@@ -34,6 +42,21 @@ static int vm_line(VM *vm){
     Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
     int off=(int)(FRAME.ip-ch->code)-1;
     return chunk_line_at(ch,off<0?0:off);
+}
+
+static void vm_print_stack_trace(VM *vm){
+    fprintf(stderr,"Call trace (most recent last):\n");
+    for(int i=0;i<vm->frame_count;i++){
+        CallFrame *fr=&vm->frames[i];
+        Chunk *ch=fr->function?&fr->function->chunk:vm->top_chunk;
+        int off=ch->code?(int)(fr->ip-ch->code)-1:0;
+        if(off<0) off=0;
+        int ln=chunk_line_at(ch,off);
+        const char *name=fr->function?fr->function->name:"<main>";
+        const char *src =fr->function?fr->function->source_file:g_source_file;
+        fprintf(stderr,"  [%d] %s()  %s:%d\n",i,name,src,ln);
+    }
+    fprintf(stderr,"\n");
 }
 
 #define RT_ERROR_IMPL_(errfn, fmt, ...) do { \
@@ -45,6 +68,7 @@ static int vm_line(VM *vm){
         goto dispatch_top; \
     } \
     errfn(vm_line(vm),fmt,##__VA_ARGS__); \
+    vm_print_stack_trace(vm); \
     return VM_RUNTIME_ERROR; \
 }while(0)
 
@@ -63,6 +87,10 @@ static void vm_throw_error(VM *vm, const char *msg){
     vm->frame_count=tf->frame_count;
     
     vm->error_value=STRING_VAL(gc_cstring(msg));
+    if(vm->stack_top>=MAX_STACK){
+        error_runtime(0,"internal: stack overflow while throwing exception");
+        vm->has_error=true; return;
+    }
     vm->stack[vm->stack_top++]=vm->error_value;
     
     
@@ -309,8 +337,22 @@ static ObjString *str_replace(const char *s, int slen, const char *from, int fle
     return gc_string_own(buf,(int)newlen);
 }
 
-static inline Value get_local(VM *vm, int slot){ return vm->stack[FRAME.base_idx+slot]; }
-static inline void  set_local(VM *vm, int slot, Value v){ vm->stack[FRAME.base_idx+slot]=v; }
+static inline Value get_local(VM *vm, int slot){
+    int idx=FRAME.base_idx+slot;
+    if(idx<0||idx>=MAX_STACK){
+        error_runtime(0,"internal: local slot %d out of range",slot);
+        vm->has_error=true; return NIL_VAL;
+    }
+    return vm->stack[idx];
+}
+static inline void set_local(VM *vm, int slot, Value v){
+    int idx=FRAME.base_idx+slot;
+    if(idx<0||idx>=MAX_STACK){
+        error_runtime(0,"internal: local slot %d out of range",slot);
+        vm->has_error=true; return;
+    }
+    vm->stack[idx]=v;
+}
 
 void vm_init(VM *vm){
     memset(vm,0,sizeof(VM));
@@ -423,6 +465,9 @@ dispatch_switch:;
     CASE(OP_CONST):{
         uint16_t idx=READ_U16();
         Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
+        if(idx>=(uint16_t)ch->const_count)
+            RT_ERROR("internal: constant index %u out of range (count %d)",
+                     (unsigned)idx,ch->const_count);
         PUSH(ch->constants[idx]); DISPATCH();
     }
     CASE(OP_NIL):   PUSH(NIL_VAL);        DISPATCH();
@@ -433,9 +478,15 @@ dispatch_switch:;
         (void)POP(); DISPATCH();
     CASE(OP_DUP):   PUSH(TOP());           DISPATCH();
 
-    CASE(OP_GET_VAR):{ uint16_t i=READ_U16(); PUSH(vm->globals[i]); DISPATCH(); }
-    CASE(OP_DEF_VAR):{ uint16_t i=READ_U16(); vm->globals[i]=POP(); DISPATCH(); }
-    CASE(OP_SET_VAR):{ uint16_t i=READ_U16(); vm->globals[i]=TOP(); DISPATCH(); }
+    CASE(OP_GET_VAR):{ uint16_t i=READ_U16();
+        if(i>=MAX_VARIABLES) RT_ERROR("internal: global index %u out of range",(unsigned)i);
+        PUSH(vm->globals[i]); DISPATCH(); }
+    CASE(OP_DEF_VAR):{ uint16_t i=READ_U16();
+        if(i>=MAX_VARIABLES) RT_ERROR("internal: global index %u out of range",(unsigned)i);
+        vm->globals[i]=POP(); DISPATCH(); }
+    CASE(OP_SET_VAR):{ uint16_t i=READ_U16();
+        if(i>=MAX_VARIABLES) RT_ERROR("internal: global index %u out of range",(unsigned)i);
+        vm->globals[i]=TOP(); DISPATCH(); }
     CASE(OP_GET_LOCAL):{ uint16_t s=READ_U16(); PUSH(get_local(vm,(int)s)); DISPATCH(); }
     CASE(OP_SET_LOCAL):{ uint16_t s=READ_U16(); set_local(vm,(int)s,TOP());  DISPATCH(); }
 
@@ -529,11 +580,15 @@ dispatch_switch:;
     CASE(OP_JUMP):{
         uint16_t t=READ_U16();
         Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
+        if((int)t>=ch->code_len)
+            RT_ERROR("internal: jump target %u out of range (code_len=%d)",(unsigned)t,ch->code_len);
         FRAME.ip=ch->code+t; DISPATCH(); }
     CASE(OP_JUMP_IF_FALSE):{
         uint16_t t=READ_U16();
         if(!is_truthy(TOP())){
             Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
+            if((int)t>=ch->code_len)
+                RT_ERROR("internal: jump target %u out of range (code_len=%d)",(unsigned)t,ch->code_len);
             FRAME.ip=ch->code+t;
         }
         DISPATCH(); }
@@ -541,6 +596,8 @@ dispatch_switch:;
         uint16_t t=READ_U16();
         if(is_truthy(TOP())){
             Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
+            if((int)t>=ch->code_len)
+                RT_ERROR("internal: jump target %u out of range (code_len=%d)",(unsigned)t,ch->code_len);
             FRAME.ip=ch->code+t;
         }
         DISPATCH(); }
@@ -548,6 +605,8 @@ dispatch_switch:;
         uint16_t t=READ_U16();
         if(IS_NIL(TOP())){
             Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
+            if((int)t>=ch->code_len)
+                RT_ERROR("internal: jump target %u out of range (code_len=%d)",(unsigned)t,ch->code_len);
             FRAME.ip=ch->code+t;
         }
         DISPATCH(); }
@@ -563,6 +622,8 @@ dispatch_switch:;
         FunctionObject *f=AS_FUNCTION(fv);
         if((int)argc!=f->arity)
             RT_ERROR_TYPE("'%s' expects %d arg(s) but got %d",f->name,f->arity,(int)argc);
+        if(!f->chunk.code || f->chunk.code_len==0)
+            RT_ERROR("internal: function '%s' has no compiled body",f->name);
         if(vm->frame_count>=MAX_CALL_DEPTH) RT_ERROR_STACK("call stack overflow");
         int base=vm->stack_top-argc;
         CallFrame *fr=&vm->frames[vm->frame_count++];
@@ -1025,6 +1086,9 @@ dispatch_switch:;
         if(idx>=arr->len){
             (void)POP(); 
             Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
+            if((int)end_offset>=ch->code_len)
+                RT_ERROR("internal: foreach end target %u out of range (code_len=%d)",
+                         (unsigned)end_offset,ch->code_len);
             FRAME.ip=ch->code+end_offset;
         } else {
             if(!arr->items)
@@ -1040,6 +1104,9 @@ dispatch_switch:;
         uint16_t off=READ_U16();
         if(vm->try_top>=MAX_TRY_DEPTH) RT_ERROR_STACK("too many nested try blocks");
         Chunk *ch=FRAME.function?&FRAME.function->chunk:vm->top_chunk;
+        if((int)off>=ch->code_len)
+            RT_ERROR("internal: catch handler target %u out of range (code_len=%d)",
+                     (unsigned)off,ch->code_len);
         TryFrame *tf=&vm->try_stack[vm->try_top++];
         tf->handler_ip=ch->code+off;
         tf->stack_top=vm->stack_top;
@@ -1124,12 +1191,16 @@ dispatch_switch:;
         
 
         uint16_t argc=READ_U16();
+        if((int)argc+1 > vm->stack_top)
+            RT_ERROR("internal: tail-call with %u argument(s) but stack only has %d value(s)",
+                     (unsigned)argc, vm->stack_top);
         Value fv=vm->stack[vm->stack_top-argc-1];
         if(!IS_FUNCTION(fv)) RT_ERROR_TYPE("attempt to tail-call a %s",vtype(fv));
         FunctionObject *f=AS_FUNCTION(fv);
         if((int)argc!=f->arity)
             RT_ERROR_TYPE("'%s' expects %d arg(s) but got %d",f->name,f->arity,(int)argc);
-        
+        if(!f->chunk.code || f->chunk.code_len==0)
+            RT_ERROR("internal: function '%s' has no compiled body",f->name);
         int base=FRAME.base_idx;
         for(int i=0;i<(int)argc;i++)
             vm->stack[base+i]=vm->stack[vm->stack_top-argc+i];

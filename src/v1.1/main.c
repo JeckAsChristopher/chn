@@ -245,18 +245,37 @@ static bool compile_and_import(const char *src, Compiler *parent_C){
     Parser P; parser_init(&P,source);
     ASTNode *ast=parser_parse(&P);
     if(g_had_error){ast_free(ast);free(source);error_init(pf,ps);return false;}
-    Compiler C; compiler_init(&C,src);
-    C.global_count=parent_C->global_count;
-    for(int i=0;i<parent_C->import_count&&C.import_count<MAX_FUNCS;i++) C.imports[C.import_count++]=parent_C->imports[i];
-    C.import_handler=chn_import_handler;
-    bool ok=compiler_compile(&C,ast);
+    Compiler *C=(Compiler*)malloc(sizeof(Compiler));
+    if(!C){ast_free(ast);free(source);error_init(pf,ps);
+           fprintf(stderr,"ChnMemoryError: out of memory\n");return false;}
+    compiler_init(C,src);
+    C->global_count=parent_C->global_count;
+    for(int i=0;i<parent_C->import_count;i++){
+        if(C->import_count>=MAX_FUNCS){
+            fprintf(stderr,"ChnImportError: import table full loading '%s' (limit %d)\n",src,MAX_FUNCS);
+            free(C);ast_free(ast);free(source);error_init(pf,ps);return false;
+        }
+        C->imports[C->import_count++]=parent_C->imports[i];
+    }
+    C->import_handler=chn_import_handler;
+    bool ok=compiler_compile(C,ast);
     ast_free(ast); free(source);
-    if(ok&&!C.had_error){
-        parent_C->global_count=C.global_count;
-        for(int i=0;i<C.func_count;i++) if(C.functions[i]->exported&&parent_C->import_count<MAX_FUNCS) parent_C->imports[parent_C->import_count++]=C.functions[i];
+    if(ok&&!C->had_error){
+        parent_C->global_count=C->global_count;
+        for(int i=0;i<C->func_count;i++){
+            if(C->functions[i]->exported){
+                if(parent_C->import_count>=MAX_FUNCS){
+                    fprintf(stderr,"ChnImportError: import table full loading '%s' (limit %d)\n",src,MAX_FUNCS);
+                    free(C);error_init(pf,ps);return false;
+                }
+                parent_C->imports[parent_C->import_count++]=C->functions[i];
+            }
+        }
     }
     error_init(pf,ps);
-    return ok&&!C.had_error;
+    bool result=ok&&!C->had_error;
+    free(C);
+    return result;
 }
 
 bool compile_source(const char *filepath, const char *source, Compiler *C){
@@ -293,18 +312,20 @@ static int run_source_file(const char *filepath, RunMode mode, const char *out_p
         if(!g_had_error){printf("=== AST: %s ===\n",filepath);ast_print(ast,0);}
         ast_free(ast); free(source); return g_had_error?1:0;
     }
-    Compiler C; C.opt_level=opt_level;
-    if(!compile_source(filepath,source,&C)){free(source);return 1;}
+    Compiler *C=(Compiler*)malloc(sizeof(Compiler));
+    if(!C){free(source);fprintf(stderr,"ChnMemoryError: out of memory\n");return 1;}
+    C->opt_level=opt_level;
+    if(!compile_source(filepath,source,C)){free(source);free(C);return 1;}
     free(source);
     if(mode==MODE_DISASM){
-        chunk_disasm(&C.top_chunk,filepath);
-        for(int i=0;i<C.func_count;i++){
-            char lbl[320]; snprintf(lbl,sizeof(lbl),"%s func %s()",visibility_name(C.functions[i]->visibility),C.functions[i]->name);
-            chunk_disasm(&C.functions[i]->chunk,lbl);
+        chunk_disasm(&C->top_chunk,filepath);
+        for(int i=0;i<C->func_count;i++){
+            char lbl[320]; snprintf(lbl,sizeof(lbl),"%s func %s()",visibility_name(C->functions[i]->visibility),C->functions[i]->name);
+            chunk_disasm(&C->functions[i]->chunk,lbl);
         }
-        return 0;
+        free(C); return 0;
     }
-    if(mode==MODE_CHECK){ printf("OK  %s -- no errors\n",filepath); return 0; }
+    if(mode==MODE_CHECK){ printf("OK  %s -- no errors\n",filepath); free(C); return 0; }
     if(mode==MODE_COMPILE_ONLY){
         char auto_path[1024]; const char *wpath=out_path;
         if(!wpath){
@@ -312,14 +333,15 @@ static int run_source_file(const char *filepath, RunMode mode, const char *out_p
             strncat(auto_path,func_only?".function":".chn2",sizeof(auto_path)-strlen(auto_path)-1);
             wpath=auto_path;
         }
-        BCResult r=func_only?bc_write_functions(wpath,&C):bc_write_program(wpath,&C);
-        if(r!=BC_OK){fprintf(stderr,"error: write '%s': %s\n\n",wpath,bc_result_str(r));return 1;}
+        BCResult r=func_only?bc_write_functions(wpath,C):bc_write_program(wpath,C);
+        if(r!=BC_OK){fprintf(stderr,"error: write '%s': %s\n\n",wpath,bc_result_str(r));free(C);return 1;}
         printf("OK  compiled %s  ->  %s\n",filepath,wpath);
         printf("    %d function(s)  |  %d instruction(s)  |  %s format\n",
-               C.func_count, C.top_chunk.code_len, g_minify ? "minified" : "plain");
-        return 0;
+               C->func_count, C->top_chunk.code_len, g_minify ? "minified" : "plain");
+        free(C); return 0;
     }
-    return run_chunk(&C.top_chunk);
+    int rc=run_chunk(&C->top_chunk);
+    free(C); return rc;
 }
 
 static bool load_cco_deps(const char *cco_path){
@@ -329,9 +351,10 @@ static bool load_cco_deps(const char *cco_path){
     if(ndep == 0)   return true;
 
     char cco_dir[1024]; path_dir(cco_path, cco_dir, sizeof(cco_dir));
-    Compiler tmp_C;
-    compiler_init(&tmp_C, cco_path);
-    tmp_C.import_handler = do_import;
+    Compiler *tmp_C=(Compiler*)malloc(sizeof(Compiler));
+    if(!tmp_C){fprintf(stderr,"ChnMemoryError: out of memory\n");return false;}
+    compiler_init(tmp_C, cco_path);
+    tmp_C->import_handler = do_import;
     chn_import_handler   = do_import;
 
     bool all_ok = true;
@@ -343,14 +366,14 @@ static bool load_cco_deps(const char *cco_path){
         if(strchr(dep_name,'/')){
             bool resolved = false;
             if(file_exists(dep_name)){
-                resolved = already_imported(dep_name) ? true : try_import_cco(dep_name, &tmp_C);
+                resolved = already_imported(dep_name) ? true : try_import_cco(dep_name, tmp_C);
             } else {
                 
                 const char *dn_dot = strrchr(dep_name,'.');
                 if(!dn_dot || strcmp(dn_dot,".cco")!=0){
                     char probe[1300]; snprintf(probe,sizeof(probe),"%s.cco",dep_name);
                     if(file_exists(probe))
-                        resolved = already_imported(probe) ? true : try_import_cco(probe, &tmp_C);
+                        resolved = already_imported(probe) ? true : try_import_cco(probe, tmp_C);
                 }
             }
             if(resolved) continue;
@@ -362,7 +385,7 @@ static bool load_cco_deps(const char *cco_path){
             char probe[1200]; snprintf(probe,sizeof(probe),"%s%s.cco",cco_dir,dep_name);
             if(file_exists(probe)){
                 if(!already_imported(probe)){
-                    bool ok = try_import_cco(probe, &tmp_C);
+                    bool ok = try_import_cco(probe, tmp_C);
                     if(!ok){
                         fprintf(stderr,
                             "error: unresolved CCO dependency\n"
@@ -381,10 +404,10 @@ static bool load_cco_deps(const char *cco_path){
         bool found = false;
         char with_cco[1204]; snprintf(with_cco,sizeof(with_cco),"%s.cco",dep_abs);
         if(file_exists(with_cco))
-            found = already_imported(with_cco) ? true : try_import_cco(with_cco, &tmp_C);
+            found = already_imported(with_cco) ? true : try_import_cco(with_cco, tmp_C);
         else if(file_exists(dep_abs))
-            found = already_imported(dep_abs) ? true : try_import_cco(dep_abs, &tmp_C);
-        if(!found) found = do_import(dep_name, &tmp_C);
+            found = already_imported(dep_abs) ? true : try_import_cco(dep_abs, tmp_C);
+        if(!found) found = do_import(dep_name, tmp_C);
         if(!found){
             fprintf(stderr,
                 "error: unresolved CCO dependency\n"
@@ -394,6 +417,7 @@ static bool load_cco_deps(const char *cco_path){
             all_ok = false;
         }
     }
+    free(tmp_C);
     return all_ok;
 }
 
@@ -449,9 +473,12 @@ static int run_chn2_file(const char *path){
     if(r1!=BC_OK){fprintf(stderr,"error: load '%s': %s\n\n",path,bc_result_str(r1));return 1;}
     if(nimp>0){
         imported_count=0;
-        Compiler tmp_C; compiler_init(&tmp_C, path);
-        tmp_C.import_handler=do_import; chn_import_handler=do_import;
-        for(int i=0;i<nimp;i++) if(imp_names[i][0]) do_import(imp_names[i], &tmp_C);
+        Compiler *tmp_C=(Compiler*)malloc(sizeof(Compiler));
+        if(!tmp_C){fprintf(stderr,"ChnMemoryError: out of memory\n");return 1;}
+        compiler_init(tmp_C, path);
+        tmp_C->import_handler=do_import; chn_import_handler=do_import;
+        for(int i=0;i<nimp;i++) if(imp_names[i][0]) do_import(imp_names[i], tmp_C);
+        free(tmp_C);
     }
     Chunk top; FunctionObject **fns; int nf;
     BCResult r2=bc_read_program(path,&top,&fns,&nf,NULL,NULL);

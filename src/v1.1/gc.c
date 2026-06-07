@@ -2,6 +2,7 @@
 
 #include "gc.h"
 #include "vm.h"
+#include "func.h"
 
 ChnOomHook gc_oom_hook = NULL;
 #include <string.h>
@@ -39,6 +40,7 @@ int chunk_add_line(Chunk *ch, int offset, int line){
 }
 
 int chunk_line_at(Chunk *ch, int offset){
+    if(!ch->lines || ch->lines_len==0) return 0;
     int lo=0,hi=ch->lines_len-1,result=0;
     while(lo<=hi){
         int mid=(lo+hi)/2;
@@ -328,20 +330,39 @@ void gc_pressure_hint(void *vm_ptr){
     if(gc.bytes_allocated >= gc.next_gc_young*3/4) gc_collect(vm_ptr);
 }
 
+static void mark_chunk_constants(Chunk *ch){
+    if(!ch) return;
+    for(int c=0;c<ch->const_count;c++) gc_mark_value(ch->constants[c]);
+}
+
 static void mark_vm_roots(VM *vm){
+    /* 1. Live value stack */
     for(int i=0;i<vm->stack_top;i++) gc_mark_value(vm->stack[i]);
+
+    /* 2. All global variables */
     for(int i=0;i<vm->global_count;i++) gc_mark_value(vm->globals[i]);
+
+    /* 3. Constants in active call frames */
     for(int i=0;i<vm->frame_count;i++){
         CallFrame *f=&vm->frames[i];
         Chunk *ch=f->function?&f->function->chunk:vm->top_chunk;
-        if(!ch) continue;
-        for(int c=0;c<ch->const_count;c++) gc_mark_value(ch->constants[c]);
+        mark_chunk_constants(ch);
     }
-    if(vm->top_chunk)
-        for(int c=0;c<vm->top_chunk->const_count;c++)
-            gc_mark_value(vm->top_chunk->constants[c]);
+
+    /* 4. Top-level chunk constants */
+    if(vm->top_chunk) mark_chunk_constants(vm->top_chunk);
+
+    /* 5. ALL registered function chunks — prevents ObjString/ObjArray
+       constants in non-executing functions from being freed between calls. */
+    for(int i=0;i<func_registry_count;i++){
+        FunctionObject *f=func_registry[i];
+        if(f) mark_chunk_constants(&f->chunk);
+    }
+
+    /* 6. Pending error value */
     gc_mark_value(vm->error_value);
-    
+
+    /* 7. Explicitly pinned objects */
     for(Obj *o=gc.pinned_list;o;o=o->gen_next) gray_push(o);
 }
 

@@ -547,6 +547,16 @@ static void compile_expr(Compiler *C, ASTNode *node){
     case NODE_BINARY:{
         
 
+        /* Safety: check for NULL operands FIRST before any field access.
+           A malformed parse (e.g. "1 +" with missing RHS) can leave
+           binary.left or binary.right as NULL, which would segfault the
+           constant-folding check below. */
+        if(!node->binary.left || !node->binary.right){
+            error_compile(line, 0, 0,
+                "binary expression is missing an operand (check for incomplete expression)");
+            C->had_error=true; emit_op(C,OP_NIL,line); break;
+        }
+
         if(C->opt_level>=1 &&
            node->binary.left->kind==NODE_NUMBER && node->binary.right->kind==NODE_NUMBER){
             double L=node->binary.left->num.value;
@@ -577,11 +587,7 @@ static void compile_expr(Compiler *C, ASTNode *node){
             compile_expr(C,node->binary.right);
             patch_jump(C,jt); break;
         }
-        if(!node->binary.left||!node->binary.right){
-            error_compile(line,0,0,"binary expression '%d' is missing an operand",
-                node->binary.op);
-            C->had_error=true; emit_op(C,OP_NIL,line); break;
-        }
+        /* NULL check already performed at top of NODE_BINARY case */
         compile_expr(C,node->binary.left);
         compile_expr(C,node->binary.right);
         switch(node->binary.op){
@@ -655,7 +661,11 @@ static void compile_expr(Compiler *C, ASTNode *node){
     }
 
     case NODE_METHOD_CALL:{
-        
+        /* Guard: object_expr must not be NULL */
+        if(!node->method_call.object_expr){
+            error_compile(line, 0, 0, "method call has no target object (syntax error)");
+            C->had_error=true; emit_op(C,OP_NIL,line); break;
+        }
         if(node->method_call.object_expr &&
            node->method_call.object_expr->kind == NODE_IDENT &&
            C->alias_count > 0)
@@ -720,6 +730,10 @@ static void compile_expr(Compiler *C, ASTNode *node){
     }
 
     case NODE_INDEX:{
+        if(!node->index.object_expr || !node->index.index){
+            error_compile(line, 0, 0, "index expression is incomplete (syntax error)");
+            C->had_error=true; emit_op(C,OP_NIL,line); break;
+        }
         compile_expr(C,node->index.object_expr);
         compile_expr(C,node->index.index);
         
@@ -787,19 +801,31 @@ static void compile_expr(Compiler *C, ASTNode *node){
         f->param_cap = f->arity;
         for(int i=0;i<f->arity;i++)
             f->params[i] = strdup(node->lambda.params[i]);
-        if(C->func_count < MAX_FUNCS) C->functions[C->func_count++] = f;
-        func_register(f);
+        if(C->func_count >= MAX_FUNCS){
+            error_compile(line,0,0,"internal: function table full (limit %d), cannot define lambda",MAX_FUNCS);
+            C->had_error=true; return;
+        }
+        C->functions[C->func_count++] = f;
+        if(func_register(f) < 0){
+            error_compile(line,0,0,"internal: global registry full (limit %d)",MAX_FUNCS);
+            C->had_error=true; return;
+        }
         f->parent = C->current_func;
 
         
         Chunk          *saved_chunk = C->current_chunk;
-        Local           saved_locs[MAX_LOCALS];
-        memcpy(saved_locs, C->locals, sizeof(saved_locs));
+        Local          *saved_locs  = (Local*)malloc(sizeof(C->locals));
+        CtxFrame       *saved_ctx   = (CtxFrame*)malloc(sizeof(C->ctx_stack));
+        if(!saved_locs || !saved_ctx){
+            free(saved_locs); free(saved_ctx);
+            error_compile(line,0,0,"internal: out of memory saving compiler state");
+            C->had_error=true; return;
+        }
+        memcpy(saved_locs, C->locals,    sizeof(C->locals));
         int             saved_lc  = C->local_count;
         bool            saved_if  = C->in_function;
         FunctionObject *saved_cf  = C->current_func;
-        CtxFrame        saved_ctx[MAX_CTX_DEPTH];
-        memcpy(saved_ctx, C->ctx_stack, sizeof(saved_ctx));
+        memcpy(saved_ctx,  C->ctx_stack, sizeof(C->ctx_stack));
         int             saved_cd  = C->ctx_depth;
 
         
@@ -848,8 +874,10 @@ static void compile_expr(Compiler *C, ASTNode *node){
         C->in_function   = saved_if;
         C->current_func  = saved_cf;
         C->ctx_depth     = saved_cd;
-        memcpy(C->locals,    saved_locs, sizeof(saved_locs));
-        memcpy(C->ctx_stack, saved_ctx,  sizeof(saved_ctx));
+        memcpy(C->locals,    saved_locs, sizeof(C->locals));
+        memcpy(C->ctx_stack, saved_ctx,  sizeof(C->ctx_stack));
+        free(saved_locs);
+        free(saved_ctx);
 
         
         emit_const(C, FUNC_VAL(f), line);
@@ -964,16 +992,16 @@ static void compile_stmt(Compiler *C, ASTNode *node){
         compile_expr(C,node->if_stmt.condition);
         int jf=emit_jump(C,OP_JUMP_IF_FALSE,line);
         emit_op(C,OP_POP,line);
-        { int slc=C->in_function?C->local_count:-1;
+        { int slc=C->local_count;
           compile_stmt(C,node->if_stmt.then_branch);
-          if(slc>=0) pop_scope(C,slc,line); }
+          pop_scope(C,slc,line); }
         int je=emit_jump(C,OP_JUMP,line);
         patch_jump(C,jf);
         emit_op(C,OP_POP,line);
         if(node->if_stmt.else_branch){
-            int slc=C->in_function?C->local_count:-1;
+            int slc=C->local_count;
             compile_stmt(C,node->if_stmt.else_branch);
-            if(slc>=0) pop_scope(C,slc,line);
+            pop_scope(C,slc,line);
         }
         patch_jump(C,je); break;
     }
@@ -1225,6 +1253,7 @@ static void compile_stmt(Compiler *C, ASTNode *node){
         bool dead=false;
         for(int i=0;i<node->block.count;i++){
             ASTNode *s=node->block.stmts[i];
+            if(!s) continue;   /* defensive: parser filters NULLs but guard anyway */
             if(dead){
                 
                 if(s->kind==NODE_EXPR_STMT && !s->expr_stmt.expr) continue;
@@ -1286,7 +1315,12 @@ static void compile_stmt(Compiler *C, ASTNode *node){
             f->params=(char**)malloc((size_t)node->func_decl.param_count*sizeof(char*));
             f->param_cap=node->func_decl.param_count;
             for(int i=0;i<f->arity;i++) f->params[i]=strdup(node->func_decl.params[i]);
-            if(C->func_count<MAX_FUNCS) C->functions[C->func_count++]=f;
+            if(C->func_count >= MAX_FUNCS){
+                error_compile(line,0,0,"internal: function table full (limit %d), cannot define '%s'",
+                              MAX_FUNCS, node->func_decl.name);
+                C->had_error=true; return;
+            }
+            C->functions[C->func_count++]=f;
         } else {
             f->visibility=node->func_decl.visibility;
             strncpy(f->source_file,C->source_file,sizeof(f->source_file)-1);
@@ -1300,23 +1334,33 @@ static void compile_stmt(Compiler *C, ASTNode *node){
             }
             C->current_func->nested[C->current_func->nested_count++]=f;
         }
-        func_register(f);
+        if(func_register(f) < 0){
+            error_compile(line,0,0,"internal: global registry full (limit %d)",MAX_FUNCS);
+            C->had_error=true; return;
+        }
 
         
         f->has_captures = node->func_decl.body && has_nested_func(node->func_decl.body);
 
         Chunk          *saved_chunk=C->current_chunk;
-        Local           saved_locs[MAX_LOCALS]; memcpy(saved_locs,C->locals,sizeof(saved_locs));
+        Local          *saved_locs=(Local*)malloc(sizeof(C->locals));
+        CtxFrame       *saved_ctx=(CtxFrame*)malloc(sizeof(C->ctx_stack));
+        Symbol         *saved_globals=(Symbol*)malloc(sizeof(C->globals));
+        if(!saved_locs||!saved_ctx||!saved_globals){
+            free(saved_locs); free(saved_ctx); free(saved_globals);
+            error_compile(line,0,0,"internal: out of memory saving compiler state");
+            C->had_error=true; return;
+        }
+        memcpy(saved_locs,C->locals,sizeof(C->locals));
         int             saved_lc=C->local_count;
         bool            saved_if=C->in_function;
         FunctionObject *saved_cf=C->current_func;
-        CtxFrame        saved_ctx[MAX_CTX_DEPTH]; memcpy(saved_ctx,C->ctx_stack,sizeof(saved_ctx));
+        memcpy(saved_ctx,C->ctx_stack,sizeof(C->ctx_stack));
         int             saved_cd=C->ctx_depth;
 
         
         int saved_gc = C->global_count;
-        Symbol saved_globals[MAX_VARIABLES];
-        memcpy(saved_globals, C->globals, sizeof(saved_globals));
+        memcpy(saved_globals, C->globals, sizeof(C->globals));
 
         
 
@@ -1363,9 +1407,9 @@ static void compile_stmt(Compiler *C, ASTNode *node){
         
         C->current_chunk=saved_chunk; C->local_count=saved_lc;
         C->in_function=saved_if; C->current_func=saved_cf; C->ctx_depth=saved_cd;
-        memcpy(C->locals,saved_locs,sizeof(saved_locs));
-        memcpy(C->ctx_stack,saved_ctx,sizeof(saved_ctx));
-        
+        memcpy(C->locals,saved_locs,sizeof(C->locals));
+        memcpy(C->ctx_stack,saved_ctx,sizeof(C->ctx_stack));
+        free(saved_ctx);
         for(int gi = saved_gc; gi < C->global_count; gi++){
             bool outer = false;
             for(int ci = 0; ci < saved_lc; ci++){
@@ -1375,7 +1419,9 @@ static void compile_stmt(Compiler *C, ASTNode *node){
                 saved_globals[gi] = C->globals[gi];
             }
         }
-        memcpy(C->globals, saved_globals, sizeof(saved_globals));
+        free(saved_locs);
+        memcpy(C->globals, saved_globals, sizeof(C->globals));
+        free(saved_globals);
         C->global_count = saved_gc > C->global_count ? saved_gc : C->global_count;
         break;
     }
@@ -1402,11 +1448,16 @@ static void compile_stmt(Compiler *C, ASTNode *node){
         }
 
         
-        if(import_ok && node->import.alias[0] && C->alias_count < 64){
-            C->aliases[C->alias_count].import_start = imp_before;
-            C->aliases[C->alias_count].import_end   = C->import_count;
-            strncpy(C->aliases[C->alias_count].alias, node->import.alias, 255);
-            C->alias_count++;
+        if(import_ok && node->import.alias[0]){
+            if(C->alias_count >= 64){
+                error_compile_import(line,0,0,"too many module aliases (limit 64)");
+                C->had_error=true;
+            } else {
+                C->aliases[C->alias_count].import_start = imp_before;
+                C->aliases[C->alias_count].import_end   = C->import_count;
+                strncpy(C->aliases[C->alias_count].alias, node->import.alias, 255);
+                C->alias_count++;
+            }
         }
         break;
     }
@@ -1455,8 +1506,16 @@ static void compile_stmt(Compiler *C, ASTNode *node){
             f->params = (char**)malloc((size_t)fc * sizeof(char*));
             f->param_cap = fc;
             for(int i=0;i<fc;i++) f->params[i] = strdup(node->struct_decl.fields[i]);
-            if(C->func_count < MAX_FUNCS) C->functions[C->func_count++] = f;
-            func_register(f);
+            if(C->func_count >= MAX_FUNCS){
+                error_compile(line,0,0,"internal: function table full (limit %d), cannot define struct '%s'",
+                              MAX_FUNCS, sname);
+                C->had_error=true; return;
+            }
+            C->functions[C->func_count++] = f;
+            if(func_register(f) < 0){
+                error_compile(line,0,0,"internal: global registry full (limit %d)",MAX_FUNCS);
+                C->had_error=true; return;
+            }
         } else {
             
             f->visibility = VIS_PUBLIC;
@@ -1465,11 +1524,18 @@ static void compile_stmt(Compiler *C, ASTNode *node){
 
         
         Chunk          *saved_chunk = C->current_chunk;
-        Local           saved_locs[MAX_LOCALS]; memcpy(saved_locs,C->locals,sizeof(saved_locs));
+        Local          *saved_locs  = (Local*)malloc(sizeof(C->locals));
+        CtxFrame       *saved_ctx   = (CtxFrame*)malloc(sizeof(C->ctx_stack));
+        if(!saved_locs || !saved_ctx){
+            free(saved_locs); free(saved_ctx);
+            error_compile(line,0,0,"internal: out of memory saving compiler state");
+            C->had_error=true; return;
+        }
+        memcpy(saved_locs, C->locals,    sizeof(C->locals));
         int             saved_lc    = C->local_count;
         bool            saved_if    = C->in_function;
         FunctionObject *saved_cf    = C->current_func;
-        CtxFrame        saved_ctx[MAX_CTX_DEPTH]; memcpy(saved_ctx,C->ctx_stack,sizeof(saved_ctx));
+        memcpy(saved_ctx,  C->ctx_stack, sizeof(C->ctx_stack));
         int             saved_cd    = C->ctx_depth;
 
         C->current_chunk = &f->chunk;
@@ -1533,8 +1599,10 @@ static void compile_stmt(Compiler *C, ASTNode *node){
         C->in_function   = saved_if;
         C->current_func  = saved_cf;
         C->ctx_depth     = saved_cd;
-        memcpy(C->locals,   saved_locs, sizeof(saved_locs));
-        memcpy(C->ctx_stack,saved_ctx,  sizeof(saved_ctx));
+        memcpy(C->locals,   saved_locs, sizeof(C->locals));
+        memcpy(C->ctx_stack,saved_ctx,  sizeof(C->ctx_stack));
+        free(saved_locs);
+        free(saved_ctx);
         break;
     }
 
@@ -1711,8 +1779,12 @@ static int instr_width(uint8_t op){
         case OP_FOREACH_STEP:        
         case OP_PUSH_HANDLER:        
         case OP_INC_LOCAL: case OP_DEC_LOCAL:
-        case OP_PRINT: case OP_INPUT: case OP_PROMPT:
-            return 3;
+        case OP_PRINT:
+            return 3;   /* opcode(1) + uint16 argc(2) */
+        case OP_PROMPT:
+            return 1;   /* opcode only, no operands */
+        case OP_INPUT:
+            return 4;   /* opcode(1) + uint16 idx(2) + is_local(1) */
         
 
         case OP_ARRAY_NEW: case OP_ARRAY_PUSH:
